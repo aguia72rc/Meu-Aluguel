@@ -1,50 +1,56 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
-import { api, apiErrorMessage } from "../api/client";
-
-interface User {
-  id: number;
-  email: string;
-  name: string;
-}
+import type { Session, User } from "@supabase/supabase-js";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { supabase } from "../lib/supabase";
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+function friendlyAuthError(message: string): string {
+  if (message.includes("Invalid login credentials")) return "Email ou senha inválidos";
+  return message;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(() => {
-    const stored = localStorage.getItem("user");
-    return stored ? (JSON.parse(stored) as User) : null;
-  });
-  const [loading, setLoading] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setLoading(false);
+    });
+
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+    });
+
+    return () => subscription.subscription.unsubscribe();
+  }, []);
 
   async function login(email: string, password: string) {
     setLoading(true);
     try {
-      const { data } = await api.post("/auth/login", { email, password });
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("user", JSON.stringify(data.user));
-      setUser(data.user);
-    } catch (error) {
-      throw new Error(apiErrorMessage(error, "Não foi possível entrar"));
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw new Error(friendlyAuthError(error.message));
+      setSession(data.session);
     } finally {
       setLoading(false);
     }
   }
 
-  function logout() {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    setUser(null);
+  async function logout() {
+    await supabase.auth.signOut();
+    setSession(null);
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user: session?.user ?? null, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

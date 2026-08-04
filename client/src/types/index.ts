@@ -1,16 +1,16 @@
 export interface Property {
-  id: number;
+  id: string;
   nome: string;
   endereco: string;
   cidade: string | null;
   valor_aluguel: number;
   valor_agua_esgoto: number;
-  ativo: number;
+  ativo: boolean;
   observacoes: string | null;
 }
 
 export interface Tenant {
-  id: number;
+  id: string;
   nome: string;
   cpf: string | null;
   email: string | null;
@@ -19,9 +19,9 @@ export interface Tenant {
 }
 
 export interface Contract {
-  id: number;
-  property_id: number;
-  tenant_id: number;
+  id: string;
+  property_id: string;
+  tenant_id: string;
   data_inicio: string;
   data_fim: string | null;
   dia_vencimento: number;
@@ -37,8 +37,8 @@ export interface Contract {
 export type PaymentStatus = "pendente" | "pago" | "atrasado" | "cancelado";
 
 export interface Payment {
-  id: number;
-  contract_id: number;
+  id: string;
+  contract_id: string;
   mes_referencia: string;
   data_vencimento: string;
   valor_aluguel: number;
@@ -57,20 +57,14 @@ export interface Payment {
 }
 
 export interface Receipt {
-  id: number;
-  payment_id: number;
+  id: string;
+  payment_id: string;
   numero: string;
   data_emissao: string;
-  arquivo: string;
+  storage_path: string;
   mes_referencia: string;
   valor_total: number;
-  valor_aluguel: number;
-  valor_agua_esgoto: number;
-  data_pagamento: string;
-  forma_pagamento: string | null;
-  contract_id: number;
   property_nome: string;
-  property_endereco: string;
   tenant_nome: string;
 }
 

@@ -1,11 +1,12 @@
 import { Building2, Droplets, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
-import { api, apiErrorMessage } from "../api/client";
 import EmptyState from "../components/EmptyState";
 import Field from "../components/Field";
 import Modal from "../components/Modal";
 import { useConfirm } from "../context/ConfirmContext";
 import { useToast } from "../context/ToastContext";
+import { errorMessage } from "../lib/errors";
+import { supabase } from "../lib/supabase";
 import type { Property } from "../types";
 import { formatCurrency } from "../utils/format";
 
@@ -32,8 +33,9 @@ export default function Properties() {
 
   async function load() {
     setLoading(true);
-    const { data } = await api.get("/properties");
-    setProperties(data.properties);
+    const { data, error } = await supabase.from("properties").select("*").order("nome");
+    if (error) toast.error(errorMessage(error, "Não foi possível carregar os imóveis"));
+    setProperties(data ?? []);
     setLoading(false);
   }
 
@@ -76,21 +78,18 @@ export default function Properties() {
       observacoes: form.observacoes || null,
       ativo: form.ativo,
     };
-    try {
-      if (editing) {
-        await api.put(`/properties/${editing.id}`, payload);
-        toast.success("Imóvel atualizado.");
-      } else {
-        await api.post("/properties", payload);
-        toast.success("Imóvel cadastrado.");
-      }
-      setModalOpen(false);
-      await load();
-    } catch (err) {
-      setError(apiErrorMessage(err, "Não foi possível salvar o imóvel"));
-    } finally {
+    const { error: dbError } = editing
+      ? await supabase.from("properties").update(payload).eq("id", editing.id)
+      : await supabase.from("properties").insert(payload);
+    if (dbError) {
+      setError(errorMessage(dbError, "Não foi possível salvar o imóvel"));
       setSubmitting(false);
+      return;
     }
+    toast.success(editing ? "Imóvel atualizado." : "Imóvel cadastrado.");
+    setModalOpen(false);
+    setSubmitting(false);
+    await load();
   }
 
   async function handleDelete(property: Property) {
@@ -101,13 +100,17 @@ export default function Properties() {
       danger: true,
     });
     if (!ok) return;
-    try {
-      await api.delete(`/properties/${property.id}`);
-      toast.success("Imóvel excluído.");
-      await load();
-    } catch (err) {
-      toast.error(apiErrorMessage(err, "Não foi possível excluir o imóvel"));
+    const { error } = await supabase.from("properties").delete().eq("id", property.id);
+    if (error) {
+      toast.error(
+        error.code === "23503"
+          ? "Não é possível excluir um imóvel com contratos vinculados. Desative-o em vez disso."
+          : errorMessage(error, "Não foi possível excluir o imóvel")
+      );
+      return;
     }
+    toast.success("Imóvel excluído.");
+    await load();
   }
 
   return (

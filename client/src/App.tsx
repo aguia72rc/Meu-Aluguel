@@ -10,7 +10,8 @@ import Receipts from "./pages/Receipts";
 import Tenants from "./pages/Tenants";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }

@@ -4,10 +4,6 @@ build/
 .env
 *.log
 
-# Banco de dados e recibos gerados
-server/data/*.sqlite
-server/receipts/*.pdf
-
 # Editor / OS
 .DS_Store
 .vscode/

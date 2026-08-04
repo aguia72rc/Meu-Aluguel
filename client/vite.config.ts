@@ -1,7 +1,9 @@
-import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite'
 
-// https://vite.dev/config/
+// Publicado em https://<usuario>.github.io/Meu-Aluguel/ (GitHub Pages de projeto),
+// então os assets precisam ser referenciados com esse prefixo em produção.
 export default defineConfig({
+  base: process.env.GITHUB_PAGES ? '/Meu-Aluguel/' : '/',
   plugins: [react()],
 })

@@ -1,11 +1,46 @@
 import { AlertCircle, ArrowRight, CircleDollarSign, Clock } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../api/client";
 import RevenueChart, { type RevenuePoint } from "../components/RevenueChart";
 import StatusBadge from "../components/StatusBadge";
+import { errorMessage } from "../lib/errors";
+import { supabase } from "../lib/supabase";
 import type { Payment, PaymentSummary } from "../types";
-import { formatCurrency, formatDate, formatMonth } from "../utils/format";
+import { currentMonth, formatCurrency, formatDate, formatMonth, today } from "../utils/format";
+
+interface PaymentRow {
+  id: string;
+  contract_id: string;
+  mes_referencia: string;
+  data_vencimento: string;
+  valor_aluguel: number;
+  valor_agua_esgoto: number;
+  valor_outros: number;
+  descricao_outros: string | null;
+  valor_total: number;
+  status: "pendente" | "pago" | "atrasado" | "cancelado";
+  data_pagamento: string | null;
+  forma_pagamento: string | null;
+  observacoes: string | null;
+  contracts: {
+    dia_vencimento: number;
+    properties: { nome: string; endereco: string } | null;
+    tenants: { nome: string; cpf: string | null } | null;
+  } | null;
+}
+
+function flattenPayment(row: PaymentRow): Payment {
+  const computedStatus =
+    row.status === "pendente" && row.data_vencimento < today() ? "atrasado" : row.status;
+  return {
+    ...row,
+    status: computedStatus,
+    property_nome: row.contracts?.properties?.nome ?? "",
+    property_endereco: row.contracts?.properties?.endereco ?? "",
+    tenant_nome: row.contracts?.tenants?.nome ?? "",
+    tenant_cpf: row.contracts?.tenants?.cpf ?? null,
+  };
+}
 
 const MESES_ABREV = [
   "Jan",
@@ -40,13 +75,31 @@ export default function Dashboard() {
 
   async function load() {
     setLoading(true);
-    const [summaryRes, paymentsRes] = await Promise.all([
-      api.get("/payments/summary"),
-      api.get("/payments"),
-    ]);
-    setSummary(summaryRes.data);
+    const { data, error } = await supabase
+      .from("payments")
+      .select("*, contracts(dia_vencimento, properties(nome, endereco), tenants(nome, cpf))");
+    if (error) {
+      console.error(errorMessage(error));
+      setLoading(false);
+      return;
+    }
+    const all: Payment[] = ((data as unknown as PaymentRow[]) ?? []).map(flattenPayment);
 
-    const all: Payment[] = paymentsRes.data.payments;
+    const mesAtual = currentMonth();
+    const recebidoMes = all
+      .filter((p) => p.status === "pago" && p.mes_referencia === mesAtual)
+      .reduce((sum, p) => sum + p.valor_total, 0);
+    const pendentesList = all.filter((p) => p.status === "pendente");
+    const atrasadosList = all.filter((p) => p.status === "atrasado");
+    setSummary({
+      mesAtual,
+      recebidoMes,
+      totalPendente: pendentesList.reduce((sum, p) => sum + p.valor_total, 0),
+      totalAtrasado: atrasadosList.reduce((sum, p) => sum + p.valor_total, 0),
+      quantidadePendente: pendentesList.length,
+      quantidadeAtrasado: atrasadosList.length,
+    });
+
     setPendentes(
       all
         .filter((p) => p.status === "pendente" || p.status === "atrasado")

@@ -1,11 +1,12 @@
 import { Pencil, Plus, Trash2, Users } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
-import { api, apiErrorMessage } from "../api/client";
 import EmptyState from "../components/EmptyState";
 import Field from "../components/Field";
 import Modal from "../components/Modal";
 import { useConfirm } from "../context/ConfirmContext";
 import { useToast } from "../context/ToastContext";
+import { errorMessage } from "../lib/errors";
+import { supabase } from "../lib/supabase";
 import type { Tenant } from "../types";
 
 const emptyForm = { nome: "", cpf: "", email: "", telefone: "", observacoes: "" };
@@ -32,8 +33,9 @@ export default function Tenants() {
 
   async function load() {
     setLoading(true);
-    const { data } = await api.get("/tenants");
-    setTenants(data.tenants);
+    const { data, error } = await supabase.from("tenants").select("*").order("nome");
+    if (error) toast.error(errorMessage(error, "Não foi possível carregar os inquilinos"));
+    setTenants(data ?? []);
     setLoading(false);
   }
 
@@ -72,21 +74,18 @@ export default function Tenants() {
       telefone: form.telefone || null,
       observacoes: form.observacoes || null,
     };
-    try {
-      if (editing) {
-        await api.put(`/tenants/${editing.id}`, payload);
-        toast.success("Inquilino atualizado.");
-      } else {
-        await api.post("/tenants", payload);
-        toast.success("Inquilino cadastrado.");
-      }
-      setModalOpen(false);
-      await load();
-    } catch (err) {
-      setError(apiErrorMessage(err, "Não foi possível salvar o inquilino"));
-    } finally {
+    const { error: dbError } = editing
+      ? await supabase.from("tenants").update(payload).eq("id", editing.id)
+      : await supabase.from("tenants").insert(payload);
+    if (dbError) {
+      setError(errorMessage(dbError, "Não foi possível salvar o inquilino"));
       setSubmitting(false);
+      return;
     }
+    toast.success(editing ? "Inquilino atualizado." : "Inquilino cadastrado.");
+    setModalOpen(false);
+    setSubmitting(false);
+    await load();
   }
 
   async function handleDelete(tenant: Tenant) {
@@ -97,13 +96,17 @@ export default function Tenants() {
       danger: true,
     });
     if (!ok) return;
-    try {
-      await api.delete(`/tenants/${tenant.id}`);
-      toast.success("Inquilino excluído.");
-      await load();
-    } catch (err) {
-      toast.error(apiErrorMessage(err, "Não foi possível excluir o inquilino"));
+    const { error } = await supabase.from("tenants").delete().eq("id", tenant.id);
+    if (error) {
+      toast.error(
+        error.code === "23503"
+          ? "Não é possível excluir um inquilino com contratos vinculados."
+          : errorMessage(error, "Não foi possível excluir o inquilino")
+      );
+      return;
     }
+    toast.success("Inquilino excluído.");
+    await load();
   }
 
   return (

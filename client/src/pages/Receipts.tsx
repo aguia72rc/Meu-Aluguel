@@ -1,22 +1,58 @@
 import { Download, Receipt as ReceiptIcon, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { api, apiErrorMessage } from "../api/client";
 import EmptyState from "../components/EmptyState";
 import { useToast } from "../context/ToastContext";
+import { errorMessage } from "../lib/errors";
+import { downloadReceiptFile } from "../lib/receipts";
+import { supabase } from "../lib/supabase";
 import type { Receipt } from "../types";
 import { formatCurrency, formatDate, formatMonth } from "../utils/format";
+
+interface ReceiptRow {
+  id: string;
+  payment_id: string;
+  numero: string;
+  data_emissao: string;
+  storage_path: string;
+  payments: {
+    mes_referencia: string;
+    valor_total: number;
+    contracts: {
+      properties: { nome: string } | null;
+      tenants: { nome: string } | null;
+    } | null;
+  } | null;
+}
+
+function flattenReceipt(row: ReceiptRow): Receipt {
+  return {
+    id: row.id,
+    payment_id: row.payment_id,
+    numero: row.numero,
+    data_emissao: row.data_emissao,
+    storage_path: row.storage_path,
+    mes_referencia: row.payments?.mes_referencia ?? "",
+    valor_total: row.payments?.valor_total ?? 0,
+    property_nome: row.payments?.contracts?.properties?.nome ?? "",
+    tenant_nome: row.payments?.contracts?.tenants?.nome ?? "",
+  };
+}
 
 export default function Receipts() {
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const toast = useToast();
 
   async function load() {
     setLoading(true);
-    const { data } = await api.get("/receipts");
-    setReceipts(data.receipts);
+    const { data, error } = await supabase
+      .from("receipts")
+      .select("*, payments(mes_referencia, valor_total, contracts(properties(nome), tenants(nome)))")
+      .order("data_emissao", { ascending: false });
+    if (error) toast.error(errorMessage(error, "Não foi possível carregar os recibos"));
+    setReceipts(((data as unknown as ReceiptRow[]) ?? []).map(flattenReceipt));
     setLoading(false);
   }
 
@@ -43,17 +79,9 @@ export default function Receipts() {
   async function handleDownload(receipt: Receipt) {
     setDownloadingId(receipt.id);
     try {
-      const response = await api.get(`/receipts/${receipt.id}/download`, {
-        responseType: "blob",
-      });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${receipt.numero}.pdf`;
-      link.click();
-      window.URL.revokeObjectURL(url);
+      await downloadReceiptFile(receipt.storage_path, `${receipt.numero}.pdf`);
     } catch (err) {
-      toast.error(apiErrorMessage(err, "Não foi possível baixar o recibo"));
+      toast.error(errorMessage(err, "Não foi possível baixar o recibo"));
     } finally {
       setDownloadingId(null);
     }

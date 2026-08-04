@@ -1,14 +1,52 @@
 import { Download, Pencil, Receipt, RotateCcw, Trash2, Wallet } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
-import { api, apiErrorMessage } from "../api/client";
 import EmptyState from "../components/EmptyState";
 import Field from "../components/Field";
 import Modal from "../components/Modal";
 import StatusBadge from "../components/StatusBadge";
 import { useConfirm } from "../context/ConfirmContext";
 import { useToast } from "../context/ToastContext";
+import { errorMessage } from "../lib/errors";
+import { downloadReceiptFile, markPaymentAsPaid, undoPayment } from "../lib/receipts";
+import { supabase } from "../lib/supabase";
 import type { Payment } from "../types";
-import { currentMonth, formatCurrency, formatDate, formatMonth } from "../utils/format";
+import { currentMonth, formatCurrency, formatDate, formatMonth, today } from "../utils/format";
+
+interface PaymentRow {
+  id: string;
+  contract_id: string;
+  mes_referencia: string;
+  data_vencimento: string;
+  valor_aluguel: number;
+  valor_agua_esgoto: number;
+  valor_outros: number;
+  descricao_outros: string | null;
+  valor_total: number;
+  status: "pendente" | "pago" | "atrasado" | "cancelado";
+  data_pagamento: string | null;
+  forma_pagamento: string | null;
+  observacoes: string | null;
+  contracts: {
+    dia_vencimento: number;
+    properties: { nome: string; endereco: string } | null;
+    tenants: { nome: string; cpf: string | null } | null;
+  } | null;
+}
+
+function flattenPayment(row: PaymentRow): Payment {
+  const computedStatus =
+    row.status === "pendente" && row.data_vencimento < today() ? "atrasado" : row.status;
+  return {
+    ...row,
+    status: computedStatus,
+    property_nome: row.contracts?.properties?.nome ?? "",
+    property_endereco: row.contracts?.properties?.endereco ?? "",
+    tenant_nome: row.contracts?.tenants?.nome ?? "",
+    tenant_cpf: row.contracts?.tenants?.cpf ?? null,
+  };
+}
+
+const PAYMENT_SELECT = "*, contracts(dia_vencimento, properties(nome, endereco), tenants(nome, cpf))";
 
 export default function Payments() {
   const [month, setMonth] = useState(currentMonth());
@@ -22,12 +60,15 @@ export default function Payments() {
 
   async function load() {
     setLoading(true);
-    const { data } = await api.get("/payments", { params: { mes_referencia: month } });
-    setPayments(
-      [...data.payments].sort((a: Payment, b: Payment) =>
-        a.property_nome.localeCompare(b.property_nome)
-      )
-    );
+    const { data, error } = await supabase
+      .from("payments")
+      .select(PAYMENT_SELECT)
+      .eq("mes_referencia", month)
+      .order("data_vencimento", { ascending: false });
+    if (error) toast.error(errorMessage(error, "Não foi possível carregar os pagamentos"));
+    const rows = ((data as unknown as PaymentRow[]) ?? []).map(flattenPayment);
+    rows.sort((a, b) => a.property_nome.localeCompare(b.property_nome));
+    setPayments(rows);
     setLoading(false);
   }
 
@@ -39,15 +80,43 @@ export default function Payments() {
   async function handleGenerate() {
     setGenerating(true);
     try {
-      const { data } = await api.post("/payments/generate", { mes_referencia: month });
+      const { data: contracts, error: contractsError } = await supabase
+        .from("contracts")
+        .select("id, dia_vencimento, valor_aluguel, valor_agua_esgoto")
+        .eq("status", "ativo");
+      if (contractsError) throw contractsError;
+
+      const rows = (contracts ?? []).map((c) => {
+        const dueDay = Math.min(c.dia_vencimento, 28);
+        return {
+          contract_id: c.id,
+          mes_referencia: month,
+          data_vencimento: `${month}-${String(dueDay).padStart(2, "0")}`,
+          valor_aluguel: c.valor_aluguel,
+          valor_agua_esgoto: c.valor_agua_esgoto,
+          valor_total: c.valor_aluguel + c.valor_agua_esgoto,
+        };
+      });
+
+      if (rows.length === 0) {
+        toast.info("Nenhum contrato ativo encontrado.");
+        return;
+      }
+
+      const { data: inserted, error: upsertError } = await supabase
+        .from("payments")
+        .upsert(rows, { onConflict: "contract_id,mes_referencia", ignoreDuplicates: true })
+        .select("id");
+      if (upsertError) throw upsertError;
+
       await load();
-      if (data.criados === 0) {
+      if (!inserted || inserted.length === 0) {
         toast.info("Todos os contratos ativos já possuem pagamento gerado para este mês.");
       } else {
-        toast.success(`${data.criados} cobrança(s) gerada(s) para ${formatMonth(month)}.`);
+        toast.success(`${inserted.length} cobrança(s) gerada(s) para ${formatMonth(month)}.`);
       }
     } catch (err) {
-      toast.error(apiErrorMessage(err, "Não foi possível gerar os pagamentos do mês"));
+      toast.error(errorMessage(err, "Não foi possível gerar os pagamentos do mês"));
     } finally {
       setGenerating(false);
     }
@@ -61,13 +130,13 @@ export default function Payments() {
       danger: true,
     });
     if (!ok) return;
-    try {
-      await api.delete(`/payments/${payment.id}`);
-      toast.success("Lançamento excluído.");
-      await load();
-    } catch (err) {
-      toast.error(apiErrorMessage(err, "Não foi possível excluir o pagamento"));
+    const { error } = await supabase.from("payments").delete().eq("id", payment.id);
+    if (error) {
+      toast.error(errorMessage(error, "Não foi possível excluir o pagamento"));
+      return;
     }
+    toast.success("Lançamento excluído.");
+    await load();
   }
 
   async function handleUndo(payment: Payment) {
@@ -79,27 +148,28 @@ export default function Payments() {
     });
     if (!ok) return;
     try {
-      await api.post(`/payments/${payment.id}/undo-payment`);
+      await undoPayment(payment.id);
       toast.success("Pagamento desfeito.");
       await load();
     } catch (err) {
-      toast.error(apiErrorMessage(err, "Não foi possível desfazer o pagamento"));
+      toast.error(errorMessage(err, "Não foi possível desfazer o pagamento"));
     }
   }
 
   async function handleDownloadReceipt(payment: Payment) {
     try {
-      const response = await api.get(`/receipts/by-payment/${payment.id}/download`, {
-        responseType: "blob",
-      });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `recibo-${payment.property_nome}-${payment.mes_referencia}.pdf`;
-      link.click();
-      window.URL.revokeObjectURL(url);
+      const { data: receipt, error } = await supabase
+        .from("receipts")
+        .select("storage_path")
+        .eq("payment_id", payment.id)
+        .single();
+      if (error || !receipt) throw error ?? new Error("Recibo não encontrado");
+      await downloadReceiptFile(
+        receipt.storage_path,
+        `recibo-${payment.property_nome}-${payment.mes_referencia}.pdf`
+      );
     } catch (err) {
-      toast.error(apiErrorMessage(err, "Não foi possível baixar o recibo"));
+      toast.error(errorMessage(err, "Não foi possível baixar o recibo"));
     }
   }
 
@@ -266,7 +336,7 @@ function PayModal({
   onClose: () => void;
   onPaid: () => void;
 }) {
-  const [dataPagamento, setDataPagamento] = useState(new Date().toISOString().slice(0, 10));
+  const [dataPagamento, setDataPagamento] = useState(today());
   const [formaPagamento, setFormaPagamento] = useState("PIX");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -277,14 +347,11 @@ function PayModal({
     setSubmitting(true);
     setError("");
     try {
-      await api.post(`/payments/${payment.id}/pay`, {
-        data_pagamento: dataPagamento,
-        forma_pagamento: formaPagamento,
-      });
+      await markPaymentAsPaid({ paymentId: payment.id, dataPagamento, formaPagamento });
       toast.success("Pagamento registrado e recibo gerado.");
       onPaid();
     } catch (err) {
-      setError(apiErrorMessage(err, "Não foi possível registrar o pagamento"));
+      setError(errorMessage(err, "Não foi possível registrar o pagamento"));
     } finally {
       setSubmitting(false);
     }
@@ -382,21 +449,26 @@ function EditPaymentModal({
     e.preventDefault();
     setSubmitting(true);
     setError("");
-    try {
-      await api.put(`/payments/${payment.id}`, {
+    const valorTotal = Number(valorAluguel) + Number(valorAgua || 0) + Number(valorOutros || 0);
+    const { error: dbError } = await supabase
+      .from("payments")
+      .update({
         valor_aluguel: Number(valorAluguel),
         valor_agua_esgoto: Number(valorAgua || 0),
         valor_outros: Number(valorOutros || 0),
         descricao_outros: descricaoOutros || null,
         data_vencimento: dataVencimento,
-      });
-      toast.success("Lançamento atualizado.");
-      onSaved();
-    } catch (err) {
-      setError(apiErrorMessage(err, "Não foi possível salvar o pagamento"));
-    } finally {
+        valor_total: valorTotal,
+      })
+      .eq("id", payment.id);
+    if (dbError) {
+      setError(errorMessage(dbError, "Não foi possível salvar o pagamento"));
       setSubmitting(false);
+      return;
     }
+    toast.success("Lançamento atualizado.");
+    setSubmitting(false);
+    onSaved();
   }
 
   return (

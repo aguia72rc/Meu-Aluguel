@@ -1,14 +1,39 @@
 import { FileText, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
-import { api, apiErrorMessage } from "../api/client";
 import EmptyState from "../components/EmptyState";
 import Field from "../components/Field";
 import Modal from "../components/Modal";
 import StatusBadge from "../components/StatusBadge";
 import { useConfirm } from "../context/ConfirmContext";
 import { useToast } from "../context/ToastContext";
+import { errorMessage } from "../lib/errors";
+import { supabase } from "../lib/supabase";
 import type { Contract, Property, Tenant } from "../types";
 import { formatCurrency, formatDate } from "../utils/format";
+
+interface ContractRow {
+  id: string;
+  property_id: string;
+  tenant_id: string;
+  data_inicio: string;
+  data_fim: string | null;
+  dia_vencimento: number;
+  valor_aluguel: number;
+  valor_agua_esgoto: number;
+  status: "ativo" | "encerrado";
+  observacoes: string | null;
+  properties: { nome: string; endereco: string } | null;
+  tenants: { nome: string } | null;
+}
+
+function flattenContract(row: ContractRow): Contract {
+  return {
+    ...row,
+    property_nome: row.properties?.nome ?? "",
+    property_endereco: row.properties?.endereco ?? "",
+    tenant_nome: row.tenants?.nome ?? "",
+  };
+}
 
 const emptyForm = {
   property_id: "",
@@ -38,13 +63,18 @@ export default function Contracts() {
   async function load() {
     setLoading(true);
     const [contractsRes, propertiesRes, tenantsRes] = await Promise.all([
-      api.get("/contracts"),
-      api.get("/properties"),
-      api.get("/tenants"),
+      supabase
+        .from("contracts")
+        .select("*, properties(nome, endereco), tenants(nome)")
+        .order("status")
+        .order("data_inicio", { ascending: false }),
+      supabase.from("properties").select("*").order("nome"),
+      supabase.from("tenants").select("*").order("nome"),
     ]);
-    setContracts(contractsRes.data.contracts);
-    setProperties(propertiesRes.data.properties);
-    setTenants(tenantsRes.data.tenants);
+    if (contractsRes.error) toast.error(errorMessage(contractsRes.error, "Não foi possível carregar os contratos"));
+    setContracts(((contractsRes.data as unknown as ContractRow[]) ?? []).map(flattenContract));
+    setProperties(propertiesRes.data ?? []);
+    setTenants(tenantsRes.data ?? []);
     setLoading(false);
   }
 
@@ -91,8 +121,8 @@ export default function Contracts() {
     setError("");
     setSubmitting(true);
     const payload = {
-      property_id: Number(form.property_id),
-      tenant_id: Number(form.tenant_id),
+      property_id: form.property_id,
+      tenant_id: form.tenant_id,
       data_inicio: form.data_inicio,
       data_fim: form.data_fim || null,
       dia_vencimento: Number(form.dia_vencimento),
@@ -101,21 +131,18 @@ export default function Contracts() {
       status: form.status,
       observacoes: form.observacoes || null,
     };
-    try {
-      if (editing) {
-        await api.put(`/contracts/${editing.id}`, payload);
-        toast.success("Contrato atualizado.");
-      } else {
-        await api.post("/contracts", payload);
-        toast.success("Contrato criado.");
-      }
-      setModalOpen(false);
-      await load();
-    } catch (err) {
-      setError(apiErrorMessage(err, "Não foi possível salvar o contrato"));
-    } finally {
+    const { error: dbError } = editing
+      ? await supabase.from("contracts").update(payload).eq("id", editing.id)
+      : await supabase.from("contracts").insert(payload);
+    if (dbError) {
+      setError(errorMessage(dbError, "Não foi possível salvar o contrato"));
       setSubmitting(false);
+      return;
     }
+    toast.success(editing ? "Contrato atualizado." : "Contrato criado.");
+    setModalOpen(false);
+    setSubmitting(false);
+    await load();
   }
 
   async function handleDelete(contract: Contract) {
@@ -126,13 +153,17 @@ export default function Contracts() {
       danger: true,
     });
     if (!ok) return;
-    try {
-      await api.delete(`/contracts/${contract.id}`);
-      toast.success("Contrato excluído.");
-      await load();
-    } catch (err) {
-      toast.error(apiErrorMessage(err, "Não foi possível excluir o contrato"));
+    const { error } = await supabase.from("contracts").delete().eq("id", contract.id);
+    if (error) {
+      toast.error(
+        error.code === "23503"
+          ? "Não é possível excluir um contrato com pagamentos vinculados. Encerre-o em vez disso."
+          : errorMessage(error, "Não foi possível excluir o contrato")
+      );
+      return;
     }
+    toast.success("Contrato excluído.");
+    await load();
   }
 
   const canCreate = properties.length > 0 && tenants.length > 0;
