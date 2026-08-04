@@ -34,7 +34,12 @@ alter table payments
   add column if not exists tipo text not null default 'aluguel'
     check (tipo in ('aluguel', 'agua_esgoto'));
 
--- 3) Separa o valor da água/esgoto dos lançamentos combinados existentes
+-- 3) Renomeia valor_aluguel -> valor (agora é só "o valor principal deste
+--    tipo de cobrança"). Precisa vir ANTES do passo 4, que insere
+--    linhas referenciando a coluna já com o nome novo.
+alter table payments rename column valor_aluguel to valor;
+
+-- 4) Separa o valor da água/esgoto dos lançamentos combinados existentes
 --    em novos lançamentos próprios, preservando status e datas de
 --    pagamento (mas sem um recibo em PDF vinculado — ver nota acima)
 insert into payments (
@@ -49,18 +54,15 @@ select
 from payments
 where valor_agua_esgoto > 0;
 
--- 4) Renomeia valor_aluguel -> valor (agora é só "o valor principal deste
---    tipo de cobrança") e recalcula o total dos lançamentos de aluguel
---    para não incluir mais a água/esgoto
-alter table payments rename column valor_aluguel to valor;
-
+-- 5) Recalcula o total dos lançamentos de aluguel para não incluir mais
+--    a água/esgoto, e remove a coluna antiga
 update payments
   set valor_total = valor + valor_outros
   where tipo = 'aluguel';
 
 alter table payments drop column if exists valor_agua_esgoto;
 
--- 5) Ajusta a restrição de unicidade: agora é 1 lançamento por
+-- 6) Ajusta a restrição de unicidade: agora é 1 lançamento por
 --    contrato + mês + tipo (antes era só contrato + mês)
 alter table payments drop constraint if exists payments_contract_id_mes_referencia_key;
 alter table payments add constraint payments_contract_tipo_mes_unique
