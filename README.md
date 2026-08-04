@@ -35,6 +35,15 @@ npm run dev
 
 Acesse `http://localhost:5173` e entre com o e-mail/senha criados no passo 1.3.
 
+### Adicionar outros administradores
+
+Todo login criado em **Authentication > Users** enxerga e edita os mesmos dados — não existe separação por usuário, é pensado para poucas pessoas de confiança administrando os mesmos imóveis juntas (você e seu cônjuge/sócio, por exemplo). Para adicionar alguém:
+
+1. **Authentication > Users > Add user**, com o e-mail/senha da pessoa (marque "Auto Confirm User").
+2. Pronto — no próximo login dela, já aparece tudo que você cadastrou.
+
+Se o seu projeto foi criado *antes* dessa funcionalidade existir (schema antigo, isolado por usuário), rode uma vez o arquivo [`supabase/migrations/002_shared_access.sql`](supabase/migrations/002_shared_access.sql) no SQL Editor para liberar o acesso compartilhado.
+
 ## 3. Publicar no GitHub Pages
 
 O repositório já vem com um workflow (`.github/workflows/deploy-pages.yml`) que builda e publica o site a cada push.

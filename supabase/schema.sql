@@ -122,7 +122,13 @@ create table if not exists receipts (
 );
 
 -- ─────────────────────────────────────────────────────────────
--- Row Level Security — cada usuário só vê os próprios dados
+-- Row Level Security — qualquer usuário autenticado (administrador)
+-- vê e edita todos os dados. Não há isolamento por usuário: todo
+-- login criado em Authentication > Users é um administrador com
+-- acesso total, pensado para ser usado por poucas pessoas de
+-- confiança (você e, por exemplo, seu cônjuge/sócio) compartilhando
+-- a mesma gestão dos imóveis. `owner_id` fica só como registro de
+-- quem cadastrou cada linha, sem efeito na permissão de acesso.
 -- ─────────────────────────────────────────────────────────────
 alter table properties enable row level security;
 alter table tenants enable row level security;
@@ -130,41 +136,34 @@ alter table contracts enable row level security;
 alter table payments enable row level security;
 alter table receipts enable row level security;
 
-create policy "properties_owner_all" on properties
-  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+create policy "properties_authenticated_all" on properties
+  for all to authenticated using (true) with check (true);
 
-create policy "tenants_owner_all" on tenants
-  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+create policy "tenants_authenticated_all" on tenants
+  for all to authenticated using (true) with check (true);
 
-create policy "contracts_owner_all" on contracts
-  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+create policy "contracts_authenticated_all" on contracts
+  for all to authenticated using (true) with check (true);
 
-create policy "payments_owner_all" on payments
-  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+create policy "payments_authenticated_all" on payments
+  for all to authenticated using (true) with check (true);
 
-create policy "receipts_owner_all" on receipts
-  for all using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+create policy "receipts_authenticated_all" on receipts
+  for all to authenticated using (true) with check (true);
 
 -- ─────────────────────────────────────────────────────────────
--- Storage — bucket privado para os PDFs dos recibos
+-- Storage — bucket privado para os PDFs dos recibos, acessível a
+-- qualquer administrador autenticado (mesma lógica acima)
 -- ─────────────────────────────────────────────────────────────
 insert into storage.buckets (id, name, public)
 values ('recibos', 'recibos', false)
 on conflict (id) do nothing;
 
--- Cada usuário só acessa arquivos dentro da própria "pasta" (primeiro
--- segmento do caminho = seu próprio auth.uid()), ex: "<uid>/REC-2026-00001.pdf"
-create policy "recibos_owner_select" on storage.objects
-  for select using (
-    bucket_id = 'recibos' and (storage.foldername(name))[1] = auth.uid()::text
-  );
+create policy "recibos_authenticated_select" on storage.objects
+  for select to authenticated using (bucket_id = 'recibos');
 
-create policy "recibos_owner_insert" on storage.objects
-  for insert with check (
-    bucket_id = 'recibos' and (storage.foldername(name))[1] = auth.uid()::text
-  );
+create policy "recibos_authenticated_insert" on storage.objects
+  for insert to authenticated with check (bucket_id = 'recibos');
 
-create policy "recibos_owner_delete" on storage.objects
-  for delete using (
-    bucket_id = 'recibos' and (storage.foldername(name))[1] = auth.uid()::text
-  );
+create policy "recibos_authenticated_delete" on storage.objects
+  for delete to authenticated using (bucket_id = 'recibos');
