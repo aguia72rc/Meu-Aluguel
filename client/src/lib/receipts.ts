@@ -1,3 +1,4 @@
+import type { PaymentType } from "../types";
 import { generateReceiptPdfBlob } from "./receiptPdf";
 import { supabase } from "./supabase";
 
@@ -11,6 +12,11 @@ interface ContractJoin {
   properties: { nome: string; endereco: string };
   tenants: { nome: string; cpf: string | null };
 }
+
+const NUMERO_PREFIXO: Record<PaymentType, string> = {
+  aluguel: "ALG",
+  agua_esgoto: "AGU",
+};
 
 export async function markPaymentAsPaid({ paymentId, dataPagamento, formaPagamento }: PayInput) {
   const { data: payment, error: fetchError } = await supabase
@@ -32,17 +38,20 @@ export async function markPaymentAsPaid({ paymentId, dataPagamento, formaPagamen
     .eq("id", paymentId);
   if (updateError) throw updateError;
 
+  const tipo = payment.tipo as PaymentType;
+  const prefixo = NUMERO_PREFIXO[tipo];
   const year = dataPagamento.slice(0, 4);
   const { count } = await supabase
     .from("receipts")
     .select("id", { count: "exact", head: true })
-    .like("numero", `REC-${year}-%`);
-  const numero = `REC-${year}-${String((count ?? 0) + 1).padStart(5, "0")}`;
+    .like("numero", `${prefixo}-${year}-%`);
+  const numero = `${prefixo}-${year}-${String((count ?? 0) + 1).padStart(5, "0")}`;
 
   const contract = payment.contracts as unknown as ContractJoin;
 
   const blob = generateReceiptPdfBlob({
     numero,
+    tipo,
     dataEmissao: new Date().toISOString(),
     proprietarioNome,
     tenantNome: contract.tenants.nome,
@@ -53,8 +62,7 @@ export async function markPaymentAsPaid({ paymentId, dataPagamento, formaPagamen
     dataVencimento: payment.data_vencimento,
     dataPagamento,
     formaPagamento,
-    valorAluguel: payment.valor_aluguel,
-    valorAguaEsgoto: payment.valor_agua_esgoto,
+    valor: payment.valor,
     valorOutros: payment.valor_outros,
     descricaoOutros: payment.descricao_outros,
     valorTotal: payment.valor_total,

@@ -1,20 +1,20 @@
-import { AlertCircle, ArrowRight, CircleDollarSign, Clock } from "lucide-react";
+import { AlertCircle, ArrowRight, CircleDollarSign, Clock, Droplets, Home } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import RevenueChart, { type RevenuePoint } from "../components/RevenueChart";
 import StatusBadge from "../components/StatusBadge";
 import { errorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
-import type { Payment, PaymentSummary } from "../types";
+import type { Payment, PaymentSummary, PaymentType } from "../types";
 import { currentMonth, formatCurrency, formatDate, formatMonth, today } from "../utils/format";
 
 interface PaymentRow {
   id: string;
   contract_id: string;
+  tipo: PaymentType;
   mes_referencia: string;
   data_vencimento: string;
-  valor_aluguel: number;
-  valor_agua_esgoto: number;
+  valor: number;
   valor_outros: number;
   descricao_outros: string | null;
   valor_total: number;
@@ -24,10 +24,21 @@ interface PaymentRow {
   observacoes: string | null;
   contracts: {
     dia_vencimento: number;
+    dia_vencimento_agua_esgoto: number;
     properties: { nome: string; endereco: string } | null;
     tenants: { nome: string; cpf: string | null } | null;
   } | null;
 }
+
+const TIPO_ICON: Record<PaymentType, typeof Home> = {
+  aluguel: Home,
+  agua_esgoto: Droplets,
+};
+
+const TIPO_LABEL: Record<PaymentType, string> = {
+  aluguel: "Aluguel",
+  agua_esgoto: "Água e Esgoto",
+};
 
 function flattenPayment(row: PaymentRow): Payment {
   const computedStatus =
@@ -77,7 +88,9 @@ export default function Dashboard() {
     setLoading(true);
     const { data, error } = await supabase
       .from("payments")
-      .select("*, contracts(dia_vencimento, properties(nome, endereco), tenants(nome, cpf))");
+      .select(
+        "*, contracts(dia_vencimento, dia_vencimento_agua_esgoto, properties(nome, endereco), tenants(nome, cpf))"
+      );
     if (error) {
       console.error(errorMessage(error));
       setLoading(false);
@@ -196,6 +209,7 @@ export default function Dashboard() {
               <thead>
                 <tr className="text-left text-ink-muted border-b border-surface-border">
                   <th className="px-5 py-2.5 font-medium">Imóvel</th>
+                  <th className="px-5 py-2.5 font-medium">Tipo</th>
                   <th className="px-5 py-2.5 font-medium">Inquilino</th>
                   <th className="px-5 py-2.5 font-medium">Vencimento</th>
                   <th className="px-5 py-2.5 font-medium">Valor</th>
@@ -203,17 +217,26 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {pendentes.map((p) => (
-                  <tr key={p.id} className="border-b border-surface-border/60 last:border-0 hover:bg-surface-page/60 transition">
-                    <td className="px-5 py-3 font-medium text-ink">{p.property_nome}</td>
-                    <td className="px-5 py-3 text-ink-secondary">{p.tenant_nome}</td>
-                    <td className="px-5 py-3 text-ink-secondary">{formatDate(p.data_vencimento)}</td>
-                    <td className="px-5 py-3 text-ink-secondary tabular-nums">{formatCurrency(p.valor_total)}</td>
-                    <td className="px-5 py-3">
-                      <StatusBadge status={p.status === "atrasado" ? "atrasado" : "pendente"} />
-                    </td>
-                  </tr>
-                ))}
+                {pendentes.map((p) => {
+                  const TipoIcon = TIPO_ICON[p.tipo];
+                  return (
+                    <tr key={p.id} className="border-b border-surface-border/60 last:border-0 hover:bg-surface-page/60 transition">
+                      <td className="px-5 py-3 font-medium text-ink">{p.property_nome}</td>
+                      <td className="px-5 py-3 text-ink-secondary">
+                        <span className="inline-flex items-center gap-1.5">
+                          <TipoIcon size={14} className="text-ink-muted" />
+                          {TIPO_LABEL[p.tipo]}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-ink-secondary">{p.tenant_nome}</td>
+                      <td className="px-5 py-3 text-ink-secondary">{formatDate(p.data_vencimento)}</td>
+                      <td className="px-5 py-3 text-ink-secondary tabular-nums">{formatCurrency(p.valor_total)}</td>
+                      <td className="px-5 py-3">
+                        <StatusBadge status={p.status === "atrasado" ? "atrasado" : "pendente"} />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

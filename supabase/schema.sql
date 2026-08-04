@@ -64,6 +64,7 @@ create table if not exists contracts (
   data_inicio date not null,
   data_fim date,
   dia_vencimento smallint not null default 5 check (dia_vencimento between 1 and 28),
+  dia_vencimento_agua_esgoto smallint not null default 5 check (dia_vencimento_agua_esgoto between 1 and 28),
   valor_aluguel numeric(12,2) not null,
   valor_agua_esgoto numeric(12,2) not null default 0,
   status text not null default 'ativo' check (status in ('ativo', 'encerrado')),
@@ -80,16 +81,18 @@ create index if not exists idx_contracts_property on contracts(property_id);
 create index if not exists idx_contracts_tenant on contracts(tenant_id);
 
 -- ─────────────────────────────────────────────────────────────
--- Pagamentos (um lançamento por mês de referência por contrato)
+-- Pagamentos — aluguel e água/esgoto são cobranças independentes:
+-- um contrato ativo gera até 2 lançamentos por mês (um por `tipo`),
+-- cada um com seu próprio vencimento, pagamento e recibo.
 -- ─────────────────────────────────────────────────────────────
 create table if not exists payments (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
   contract_id uuid not null references contracts(id) on delete restrict,
+  tipo text not null default 'aluguel' check (tipo in ('aluguel', 'agua_esgoto')),
   mes_referencia text not null, -- formato YYYY-MM
   data_vencimento date not null,
-  valor_aluguel numeric(12,2) not null,
-  valor_agua_esgoto numeric(12,2) not null default 0,
+  valor numeric(12,2) not null, -- valor principal desse tipo de cobrança
   valor_outros numeric(12,2) not null default 0,
   descricao_outros text,
   valor_total numeric(12,2) not null,
@@ -99,7 +102,7 @@ create table if not exists payments (
   observacoes text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (contract_id, mes_referencia)
+  unique (contract_id, mes_referencia, tipo)
 );
 
 create trigger payments_set_updated_at

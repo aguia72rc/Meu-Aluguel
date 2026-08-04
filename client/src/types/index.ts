@@ -25,6 +25,7 @@ export interface Contract {
   data_inicio: string;
   data_fim: string | null;
   dia_vencimento: number;
+  dia_vencimento_agua_esgoto: number;
   valor_aluguel: number;
   valor_agua_esgoto: number;
   status: "ativo" | "encerrado";
@@ -35,14 +36,15 @@ export interface Contract {
 }
 
 export type PaymentStatus = "pendente" | "pago" | "atrasado" | "cancelado";
+export type PaymentType = "aluguel" | "agua_esgoto";
 
 export interface Payment {
   id: string;
   contract_id: string;
+  tipo: PaymentType;
   mes_referencia: string;
   data_vencimento: string;
-  valor_aluguel: number;
-  valor_agua_esgoto: number;
+  valor: number;
   valor_outros: number;
   descricao_outros: string | null;
   valor_total: number;
@@ -62,6 +64,7 @@ export interface Receipt {
   numero: string;
   data_emissao: string;
   storage_path: string;
+  tipo: PaymentType;
   mes_referencia: string;
   valor_total: number;
   property_nome: string;

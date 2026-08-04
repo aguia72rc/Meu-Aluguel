@@ -1,4 +1,4 @@
-import { Download, Pencil, Receipt, RotateCcw, Trash2, Wallet } from "lucide-react";
+import { Banknote, Download, Droplets, Pencil, Receipt, RotateCcw, Trash2, Wallet } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import EmptyState from "../components/EmptyState";
 import Field from "../components/Field";
@@ -9,16 +9,16 @@ import { useToast } from "../context/ToastContext";
 import { errorMessage } from "../lib/errors";
 import { downloadReceiptFile, markPaymentAsPaid, undoPayment } from "../lib/receipts";
 import { supabase } from "../lib/supabase";
-import type { Payment } from "../types";
+import type { Payment, PaymentType } from "../types";
 import { currentMonth, formatCurrency, formatDate, formatMonth, today } from "../utils/format";
 
 interface PaymentRow {
   id: string;
   contract_id: string;
+  tipo: PaymentType;
   mes_referencia: string;
   data_vencimento: string;
-  valor_aluguel: number;
-  valor_agua_esgoto: number;
+  valor: number;
   valor_outros: number;
   descricao_outros: string | null;
   valor_total: number;
@@ -28,6 +28,7 @@ interface PaymentRow {
   observacoes: string | null;
   contracts: {
     dia_vencimento: number;
+    dia_vencimento_agua_esgoto: number;
     properties: { nome: string; endereco: string } | null;
     tenants: { nome: string; cpf: string | null } | null;
   } | null;
@@ -46,11 +47,23 @@ function flattenPayment(row: PaymentRow): Payment {
   };
 }
 
-const PAYMENT_SELECT = "*, contracts(dia_vencimento, properties(nome, endereco), tenants(nome, cpf))";
+const PAYMENT_SELECT =
+  "*, contracts(dia_vencimento, dia_vencimento_agua_esgoto, properties(nome, endereco), tenants(nome, cpf))";
+
+const TABS: { tipo: PaymentType; label: string; icon: typeof Banknote }[] = [
+  { tipo: "aluguel", label: "Aluguel", icon: Banknote },
+  { tipo: "agua_esgoto", label: "Água e Esgoto", icon: Droplets },
+];
+
+const VALOR_LABEL: Record<PaymentType, string> = {
+  aluguel: "Aluguel",
+  agua_esgoto: "Água e Esgoto",
+};
 
 export default function Payments() {
   const [month, setMonth] = useState(currentMonth());
-  const [payments, setPayments] = useState<Payment[]>([]);
+  const [tipo, setTipo] = useState<PaymentType>("aluguel");
+  const [allPayments, setAllPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [payModalPayment, setPayModalPayment] = useState<Payment | null>(null);
@@ -68,7 +81,7 @@ export default function Payments() {
     if (error) toast.error(errorMessage(error, "Não foi possível carregar os pagamentos"));
     const rows = ((data as unknown as PaymentRow[]) ?? []).map(flattenPayment);
     rows.sort((a, b) => a.property_nome.localeCompare(b.property_nome));
-    setPayments(rows);
+    setAllPayments(rows);
     setLoading(false);
   }
 
@@ -77,26 +90,48 @@ export default function Payments() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month]);
 
+  const payments = allPayments.filter((p) => p.tipo === tipo);
+
   async function handleGenerate() {
     setGenerating(true);
     try {
       const { data: contracts, error: contractsError } = await supabase
         .from("contracts")
-        .select("id, dia_vencimento, valor_aluguel, valor_agua_esgoto")
+        .select("id, dia_vencimento, dia_vencimento_agua_esgoto, valor_aluguel, valor_agua_esgoto")
         .eq("status", "ativo");
       if (contractsError) throw contractsError;
 
-      const rows = (contracts ?? []).map((c) => {
-        const dueDay = Math.min(c.dia_vencimento, 28);
-        return {
+      const rows: {
+        contract_id: string;
+        tipo: PaymentType;
+        mes_referencia: string;
+        data_vencimento: string;
+        valor: number;
+        valor_total: number;
+      }[] = [];
+
+      for (const c of contracts ?? []) {
+        const rentDueDay = Math.min(c.dia_vencimento, 28);
+        rows.push({
           contract_id: c.id,
+          tipo: "aluguel",
           mes_referencia: month,
-          data_vencimento: `${month}-${String(dueDay).padStart(2, "0")}`,
-          valor_aluguel: c.valor_aluguel,
-          valor_agua_esgoto: c.valor_agua_esgoto,
-          valor_total: c.valor_aluguel + c.valor_agua_esgoto,
-        };
-      });
+          data_vencimento: `${month}-${String(rentDueDay).padStart(2, "0")}`,
+          valor: c.valor_aluguel,
+          valor_total: c.valor_aluguel,
+        });
+        if (c.valor_agua_esgoto > 0) {
+          const waterDueDay = Math.min(c.dia_vencimento_agua_esgoto, 28);
+          rows.push({
+            contract_id: c.id,
+            tipo: "agua_esgoto",
+            mes_referencia: month,
+            data_vencimento: `${month}-${String(waterDueDay).padStart(2, "0")}`,
+            valor: c.valor_agua_esgoto,
+            valor_total: c.valor_agua_esgoto,
+          });
+        }
+      }
 
       if (rows.length === 0) {
         toast.info("Nenhum contrato ativo encontrado.");
@@ -105,13 +140,13 @@ export default function Payments() {
 
       const { data: inserted, error: upsertError } = await supabase
         .from("payments")
-        .upsert(rows, { onConflict: "contract_id,mes_referencia", ignoreDuplicates: true })
+        .upsert(rows, { onConflict: "contract_id,mes_referencia,tipo", ignoreDuplicates: true })
         .select("id");
       if (upsertError) throw upsertError;
 
       await load();
       if (!inserted || inserted.length === 0) {
-        toast.info("Todos os contratos ativos já possuem pagamento gerado para este mês.");
+        toast.info("Todos os contratos ativos já possuem cobrança gerada para este mês.");
       } else {
         toast.success(`${inserted.length} cobrança(s) gerada(s) para ${formatMonth(month)}.`);
       }
@@ -166,7 +201,7 @@ export default function Payments() {
       if (error || !receipt) throw error ?? new Error("Recibo não encontrado");
       await downloadReceiptFile(
         receipt.storage_path,
-        `recibo-${payment.property_nome}-${payment.mes_referencia}.pdf`
+        `recibo-${payment.tipo}-${payment.property_nome}-${payment.mes_referencia}.pdf`
       );
     } catch (err) {
       toast.error(errorMessage(err, "Não foi possível baixar o recibo"));
@@ -194,6 +229,33 @@ export default function Payments() {
         </div>
       </div>
 
+      <div className="flex gap-1 border-b border-surface-border">
+        {TABS.map((tab) => {
+          const count = allPayments.filter(
+            (p) => p.tipo === tab.tipo && p.status !== "pago"
+          ).length;
+          return (
+            <button
+              key={tab.tipo}
+              onClick={() => setTipo(tab.tipo)}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition ${
+                tipo === tab.tipo
+                  ? "border-primary-500 text-primary-700"
+                  : "border-transparent text-ink-secondary hover:text-ink"
+              }`}
+            >
+              <tab.icon size={16} />
+              {tab.label}
+              {count > 0 && (
+                <span className="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-surface-page text-xs text-ink-muted">
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       <div className="card overflow-hidden">
         {loading ? (
           <div className="p-5 space-y-3">
@@ -204,7 +266,7 @@ export default function Payments() {
         ) : payments.length === 0 ? (
           <EmptyState
             icon={Wallet}
-            title={`Nenhum pagamento para ${formatMonth(month)}`}
+            title={`Nenhum pagamento de ${VALOR_LABEL[tipo].toLowerCase()} para ${formatMonth(month)}`}
             description='Clique em "Gerar cobranças" para criar os lançamentos deste mês a partir dos contratos ativos.'
           />
         ) : (
@@ -215,9 +277,7 @@ export default function Payments() {
                   <th className="px-5 py-2.5 font-medium">Imóvel</th>
                   <th className="px-5 py-2.5 font-medium">Inquilino</th>
                   <th className="px-5 py-2.5 font-medium">Vencimento</th>
-                  <th className="px-5 py-2.5 font-medium">Aluguel</th>
-                  <th className="px-5 py-2.5 font-medium">Água/Esgoto</th>
-                  <th className="px-5 py-2.5 font-medium">Total</th>
+                  <th className="px-5 py-2.5 font-medium">Valor</th>
                   <th className="px-5 py-2.5 font-medium">Status</th>
                   <th className="px-5 py-2.5 font-medium"></th>
                 </tr>
@@ -231,12 +291,6 @@ export default function Payments() {
                     <td className="px-5 py-3 font-medium text-ink">{p.property_nome}</td>
                     <td className="px-5 py-3 text-ink-secondary">{p.tenant_nome}</td>
                     <td className="px-5 py-3 text-ink-secondary">{formatDate(p.data_vencimento)}</td>
-                    <td className="px-5 py-3 text-ink-secondary tabular-nums">
-                      {formatCurrency(p.valor_aluguel)}
-                    </td>
-                    <td className="px-5 py-3 text-ink-secondary tabular-nums">
-                      {formatCurrency(p.valor_agua_esgoto)}
-                    </td>
                     <td className="px-5 py-3 font-medium text-ink tabular-nums">
                       {formatCurrency(p.valor_total)}
                     </td>
@@ -365,12 +419,8 @@ function PayModal({
         </p>
         <div className="bg-surface-page rounded-xl p-3.5 text-sm space-y-1.5">
           <div className="flex justify-between">
-            <span className="text-ink-muted">Aluguel</span>
-            <span className="tabular-nums">{formatCurrency(payment.valor_aluguel)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-ink-muted">Água e Esgoto</span>
-            <span className="tabular-nums">{formatCurrency(payment.valor_agua_esgoto)}</span>
+            <span className="text-ink-muted">{VALOR_LABEL[payment.tipo]}</span>
+            <span className="tabular-nums">{formatCurrency(payment.valor)}</span>
           </div>
           {payment.valor_outros > 0 && (
             <div className="flex justify-between">
@@ -436,8 +486,7 @@ function EditPaymentModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [valorAluguel, setValorAluguel] = useState(String(payment.valor_aluguel));
-  const [valorAgua, setValorAgua] = useState(String(payment.valor_agua_esgoto));
+  const [valor, setValor] = useState(String(payment.valor));
   const [valorOutros, setValorOutros] = useState(String(payment.valor_outros));
   const [descricaoOutros, setDescricaoOutros] = useState(payment.descricao_outros ?? "");
   const [dataVencimento, setDataVencimento] = useState(payment.data_vencimento.slice(0, 10));
@@ -449,12 +498,11 @@ function EditPaymentModal({
     e.preventDefault();
     setSubmitting(true);
     setError("");
-    const valorTotal = Number(valorAluguel) + Number(valorAgua || 0) + Number(valorOutros || 0);
+    const valorTotal = Number(valor) + Number(valorOutros || 0);
     const { error: dbError } = await supabase
       .from("payments")
       .update({
-        valor_aluguel: Number(valorAluguel),
-        valor_agua_esgoto: Number(valorAgua || 0),
+        valor: Number(valor),
         valor_outros: Number(valorOutros || 0),
         descricao_outros: descricaoOutros || null,
         data_vencimento: dataVencimento,
@@ -486,33 +534,23 @@ function EditPaymentModal({
             className="input"
           />
         </Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Aluguel (R$)">
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              required
-              value={valorAluguel}
-              onChange={(e) => setValorAluguel(e.target.value)}
-              className="input"
-            />
-          </Field>
-          <Field label="Água e Esgoto (R$)">
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={valorAgua}
-              onChange={(e) => setValorAgua(e.target.value)}
-              className="input"
-            />
-          </Field>
-        </div>
-        <p className="text-xs text-ink-muted -mt-2">
-          Ajuste a taxa de água e esgoto deste mês caso o valor tenha variado em relação ao valor
-          fixo do contrato.
-        </p>
+        <Field label={`${VALOR_LABEL[payment.tipo]} (R$)`}>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            required
+            value={valor}
+            onChange={(e) => setValor(e.target.value)}
+            className="input"
+          />
+        </Field>
+        {payment.tipo === "agua_esgoto" && (
+          <p className="text-xs text-ink-muted -mt-2">
+            Ajuste esse valor caso a conta de água/esgoto tenha variado em relação ao valor fixo
+            do contrato.
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-4">
           <Field label="Outros valores (R$)">
             <input
@@ -529,7 +567,7 @@ function EditPaymentModal({
               value={descricaoOutros}
               onChange={(e) => setDescricaoOutros(e.target.value)}
               className="input"
-              placeholder="Ex: IPTU"
+              placeholder="Ex: multa por atraso"
             />
           </Field>
         </div>

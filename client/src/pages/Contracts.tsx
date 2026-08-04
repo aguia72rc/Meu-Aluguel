@@ -18,6 +18,7 @@ interface ContractRow {
   data_inicio: string;
   data_fim: string | null;
   dia_vencimento: number;
+  dia_vencimento_agua_esgoto: number;
   valor_aluguel: number;
   valor_agua_esgoto: number;
   status: "ativo" | "encerrado";
@@ -41,6 +42,7 @@ const emptyForm = {
   data_inicio: "",
   data_fim: "",
   dia_vencimento: "5",
+  dia_vencimento_agua_esgoto: "5",
   valor_aluguel: "",
   valor_agua_esgoto: "",
   status: "ativo" as "ativo" | "encerrado",
@@ -97,6 +99,7 @@ export default function Contracts() {
       data_inicio: contract.data_inicio.slice(0, 10),
       data_fim: contract.data_fim ? contract.data_fim.slice(0, 10) : "",
       dia_vencimento: String(contract.dia_vencimento),
+      dia_vencimento_agua_esgoto: String(contract.dia_vencimento_agua_esgoto),
       valor_aluguel: String(contract.valor_aluguel),
       valor_agua_esgoto: String(contract.valor_agua_esgoto),
       status: contract.status,
@@ -126,6 +129,7 @@ export default function Contracts() {
       data_inicio: form.data_inicio,
       data_fim: form.data_fim || null,
       dia_vencimento: Number(form.dia_vencimento),
+      dia_vencimento_agua_esgoto: Number(form.dia_vencimento_agua_esgoto),
       valor_aluguel: Number(form.valor_aluguel),
       valor_agua_esgoto: Number(form.valor_agua_esgoto || 0),
       status: form.status,
@@ -206,7 +210,6 @@ export default function Contracts() {
                   <th className="px-5 py-2.5 font-medium">Imóvel</th>
                   <th className="px-5 py-2.5 font-medium">Inquilino</th>
                   <th className="px-5 py-2.5 font-medium">Início</th>
-                  <th className="px-5 py-2.5 font-medium">Vencimento</th>
                   <th className="px-5 py-2.5 font-medium">Aluguel</th>
                   <th className="px-5 py-2.5 font-medium">Água/Esgoto</th>
                   <th className="px-5 py-2.5 font-medium">Status</th>
@@ -222,12 +225,13 @@ export default function Contracts() {
                     <td className="px-5 py-3 font-medium text-ink">{c.property_nome}</td>
                     <td className="px-5 py-3 text-ink-secondary">{c.tenant_nome}</td>
                     <td className="px-5 py-3 text-ink-secondary">{formatDate(c.data_inicio)}</td>
-                    <td className="px-5 py-3 text-ink-secondary">Dia {c.dia_vencimento}</td>
                     <td className="px-5 py-3 text-ink-secondary tabular-nums">
                       {formatCurrency(c.valor_aluguel)}
+                      <span className="text-ink-muted"> · dia {c.dia_vencimento}</span>
                     </td>
                     <td className="px-5 py-3 text-ink-secondary tabular-nums">
                       {formatCurrency(c.valor_agua_esgoto)}
+                      <span className="text-ink-muted"> · dia {c.dia_vencimento_agua_esgoto}</span>
                     </td>
                     <td className="px-5 py-3">
                       <StatusBadge status={c.status} />
@@ -310,17 +314,9 @@ export default function Contracts() {
                 />
               </Field>
             </div>
-            <Field label="Dia de vencimento (1-28)">
-              <input
-                required
-                type="number"
-                min="1"
-                max="28"
-                value={form.dia_vencimento}
-                onChange={(e) => setForm({ ...form, dia_vencimento: e.target.value })}
-                className="input"
-              />
-            </Field>
+            <p className="text-xs font-medium text-ink-muted uppercase tracking-wide -mb-1">
+              Aluguel
+            </p>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Valor do aluguel (R$)">
                 <input
@@ -333,6 +329,22 @@ export default function Contracts() {
                   className="input"
                 />
               </Field>
+              <Field label="Dia de vencimento (1-28)">
+                <input
+                  required
+                  type="number"
+                  min="1"
+                  max="28"
+                  value={form.dia_vencimento}
+                  onChange={(e) => setForm({ ...form, dia_vencimento: e.target.value })}
+                  className="input"
+                />
+              </Field>
+            </div>
+            <p className="text-xs font-medium text-ink-muted uppercase tracking-wide -mb-1">
+              Água e esgoto
+            </p>
+            <div className="grid grid-cols-2 gap-4">
               <Field label="Taxa água e esgoto (R$)">
                 <input
                   type="number"
@@ -340,6 +352,17 @@ export default function Contracts() {
                   min="0"
                   value={form.valor_agua_esgoto}
                   onChange={(e) => setForm({ ...form, valor_agua_esgoto: e.target.value })}
+                  className="input"
+                />
+              </Field>
+              <Field label="Dia de vencimento (1-28)">
+                <input
+                  required
+                  type="number"
+                  min="1"
+                  max="28"
+                  value={form.dia_vencimento_agua_esgoto}
+                  onChange={(e) => setForm({ ...form, dia_vencimento_agua_esgoto: e.target.value })}
                   className="input"
                 />
               </Field>

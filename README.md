@@ -8,9 +8,9 @@ Sistema web para gestão de imóveis alugados: cadastro de imóveis e inquilinos
 
 - **Imóveis**: cadastro com endereço, valor do aluguel e valor fixo da taxa de água e esgoto.
 - **Inquilinos**: cadastro com CPF, e-mail e telefone.
-- **Contratos**: vincula imóvel + inquilino, define dia de vencimento e valores (herdados do imóvel, editáveis por contrato).
-- **Pagamentos**: geração mensal automática das cobranças (aluguel + água/esgoto) para todos os contratos ativos; permite ajustar valores pontuais (ex: conta de água variou naquele mês) ou lançar valores extras (ex: IPTU); marca como pago e calcula atraso automaticamente.
-- **Recibos**: ao marcar um pagamento como pago, um recibo em PDF é gerado no navegador e enviado para o Supabase Storage, disponível para download a qualquer momento na tela de Recibos.
+- **Contratos**: vincula imóvel + inquilino, define dia de vencimento e valores (herdados do imóvel, editáveis por contrato) — **aluguel e água/esgoto têm cada um seu próprio dia de vencimento**.
+- **Pagamentos**: aluguel e água/esgoto são cobranças **totalmente independentes**, cada uma em sua própria aba, com vencimento, pagamento e recibo próprios. "Gerar cobranças" cria as duas de uma vez a partir dos contratos ativos; permite ajustar valores pontuais (ex: conta de água variou naquele mês) ou lançar valores extras (ex: multa por atraso).
+- **Recibos**: ao marcar um pagamento como pago, um recibo em PDF específico daquele tipo (Aluguel ou Água e Esgoto) é gerado no navegador e enviado para o Supabase Storage, disponível para download a qualquer momento na tela de Recibos.
 - **Painel**: resumo do mês (recebido, pendente, atrasado), gráfico de receita dos últimos 6 meses e próximos vencimentos.
 - Login via Supabase Auth (e-mail e senha).
 
@@ -44,6 +44,10 @@ Todo login criado em **Authentication > Users** enxerga e edita os mesmos dados 
 
 Se o seu projeto foi criado *antes* dessa funcionalidade existir (schema antigo, isolado por usuário), rode uma vez o arquivo [`supabase/migrations/002_shared_access.sql`](supabase/migrations/002_shared_access.sql) no SQL Editor para liberar o acesso compartilhado.
 
+### Já tinha um projeto antes da separação aluguel / água e esgoto?
+
+Se o seu projeto já existia antes de aluguel e água/esgoto virarem cobranças separadas, rode uma vez o arquivo [`supabase/migrations/003_split_water_bills.sql`](supabase/migrations/003_split_water_bills.sql) no SQL Editor. **Sem isso o site publicado vai dar erro** ao carregar Pagamentos/Recibos, porque essas telas passam a esperar colunas novas (`tipo`, `valor`) que só existem depois da migração. Meses já pagos antes da migração continuam com o recibo antigo (combinado) associado ao lançamento de aluguel; a parte de água/esgoto desses meses passa a existir como um lançamento próprio já marcado como pago, mas sem um PDF de recibo separado.
+
 ## 3. Publicar no GitHub Pages
 
 O repositório já vem com um workflow (`.github/workflows/deploy-pages.yml`) que builda e publica o site a cada push.
@@ -61,8 +65,8 @@ O repositório já vem com um workflow (`.github/workflows/deploy-pages.yml`) qu
 1. Cadastre seus **imóveis**, informando o valor do aluguel e da taxa de água e esgoto.
 2. Cadastre os **inquilinos**.
 3. Crie um **contrato** vinculando imóvel e inquilino (os valores são copiados do imóvel, mas podem ser ajustados).
-4. Todo mês, na tela de **Pagamentos**, clique em "Gerar cobranças" para criar os lançamentos de todos os contratos ativos.
-5. Quando o inquilino pagar, clique em "Marcar como pago" — o recibo em PDF é gerado automaticamente e fica disponível na tela de **Recibos**.
+4. Todo mês, na tela de **Pagamentos**, clique em "Gerar cobranças" para criar os lançamentos de aluguel e de água/esgoto de todos os contratos ativos — cada um aparece na sua própria aba.
+5. Quando o inquilino pagar (o aluguel e a água/esgoto podem ser pagos em datas diferentes), clique em "Marcar como pago" — o recibo em PDF daquele tipo é gerado automaticamente e fica disponível na tela de **Recibos**.
 
 ## Estrutura do projeto
 

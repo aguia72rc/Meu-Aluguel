@@ -1,11 +1,11 @@
-import { Download, Receipt as ReceiptIcon, Search } from "lucide-react";
+import { Download, Droplets, Home, Receipt as ReceiptIcon, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import EmptyState from "../components/EmptyState";
 import { useToast } from "../context/ToastContext";
 import { errorMessage } from "../lib/errors";
 import { downloadReceiptFile } from "../lib/receipts";
 import { supabase } from "../lib/supabase";
-import type { Receipt } from "../types";
+import type { PaymentType, Receipt } from "../types";
 import { formatCurrency, formatDate, formatMonth } from "../utils/format";
 
 interface ReceiptRow {
@@ -15,6 +15,7 @@ interface ReceiptRow {
   data_emissao: string;
   storage_path: string;
   payments: {
+    tipo: PaymentType;
     mes_referencia: string;
     valor_total: number;
     contracts: {
@@ -24,6 +25,16 @@ interface ReceiptRow {
   } | null;
 }
 
+const TIPO_ICON: Record<PaymentType, typeof Home> = {
+  aluguel: Home,
+  agua_esgoto: Droplets,
+};
+
+const TIPO_LABEL: Record<PaymentType, string> = {
+  aluguel: "Aluguel",
+  agua_esgoto: "Água e Esgoto",
+};
+
 function flattenReceipt(row: ReceiptRow): Receipt {
   return {
     id: row.id,
@@ -31,6 +42,7 @@ function flattenReceipt(row: ReceiptRow): Receipt {
     numero: row.numero,
     data_emissao: row.data_emissao,
     storage_path: row.storage_path,
+    tipo: row.payments?.tipo ?? "aluguel",
     mes_referencia: row.payments?.mes_referencia ?? "",
     valor_total: row.payments?.valor_total ?? 0,
     property_nome: row.payments?.contracts?.properties?.nome ?? "",
@@ -49,7 +61,9 @@ export default function Receipts() {
     setLoading(true);
     const { data, error } = await supabase
       .from("receipts")
-      .select("*, payments(mes_referencia, valor_total, contracts(properties(nome), tenants(nome)))")
+      .select(
+        "*, payments(tipo, mes_referencia, valor_total, contracts(properties(nome), tenants(nome)))"
+      )
       .order("data_emissao", { ascending: false });
     if (error) toast.error(errorMessage(error, "Não foi possível carregar os recibos"));
     setReceipts(((data as unknown as ReceiptRow[]) ?? []).map(flattenReceipt));
@@ -129,6 +143,7 @@ export default function Receipts() {
               <thead>
                 <tr className="text-left text-ink-muted border-b border-surface-border">
                   <th className="px-5 py-2.5 font-medium">Nº do recibo</th>
+                  <th className="px-5 py-2.5 font-medium">Tipo</th>
                   <th className="px-5 py-2.5 font-medium">Imóvel</th>
                   <th className="px-5 py-2.5 font-medium">Inquilino</th>
                   <th className="px-5 py-2.5 font-medium">Mês referência</th>
@@ -138,38 +153,47 @@ export default function Receipts() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((r) => (
-                  <tr
-                    key={r.id}
-                    className="border-b border-surface-border/60 last:border-0 hover:bg-surface-page/60 transition"
-                  >
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-2.5">
-                        <div className="h-8 w-8 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center shrink-0">
-                          <ReceiptIcon size={15} />
+                {filtered.map((r) => {
+                  const TipoIcon = TIPO_ICON[r.tipo];
+                  return (
+                    <tr
+                      key={r.id}
+                      className="border-b border-surface-border/60 last:border-0 hover:bg-surface-page/60 transition"
+                    >
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-8 w-8 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center shrink-0">
+                            <ReceiptIcon size={15} />
+                          </div>
+                          <span className="font-medium text-ink tabular-nums">{r.numero}</span>
                         </div>
-                        <span className="font-medium text-ink tabular-nums">{r.numero}</span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3 text-ink-secondary">{r.property_nome}</td>
-                    <td className="px-5 py-3 text-ink-secondary">{r.tenant_nome}</td>
-                    <td className="px-5 py-3 text-ink-secondary">{formatMonth(r.mes_referencia)}</td>
-                    <td className="px-5 py-3 text-ink-secondary">{formatDate(r.data_emissao)}</td>
-                    <td className="px-5 py-3 font-medium text-ink tabular-nums">
-                      {formatCurrency(r.valor_total)}
-                    </td>
-                    <td className="px-5 py-3">
-                      <button
-                        onClick={() => handleDownload(r)}
-                        disabled={downloadingId === r.id}
-                        className="inline-flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 disabled:opacity-50 transition"
-                      >
-                        <Download size={14} />
-                        Baixar
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-5 py-3 text-ink-secondary">
+                        <span className="inline-flex items-center gap-1.5">
+                          <TipoIcon size={14} className="text-ink-muted" />
+                          {TIPO_LABEL[r.tipo]}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-ink-secondary">{r.property_nome}</td>
+                      <td className="px-5 py-3 text-ink-secondary">{r.tenant_nome}</td>
+                      <td className="px-5 py-3 text-ink-secondary">{formatMonth(r.mes_referencia)}</td>
+                      <td className="px-5 py-3 text-ink-secondary">{formatDate(r.data_emissao)}</td>
+                      <td className="px-5 py-3 font-medium text-ink tabular-nums">
+                        {formatCurrency(r.valor_total)}
+                      </td>
+                      <td className="px-5 py-3">
+                        <button
+                          onClick={() => handleDownload(r)}
+                          disabled={downloadingId === r.id}
+                          className="inline-flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 disabled:opacity-50 transition"
+                        >
+                          <Download size={14} />
+                          Baixar
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

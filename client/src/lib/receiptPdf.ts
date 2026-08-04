@@ -1,8 +1,10 @@
 import { jsPDF } from "jspdf";
+import type { PaymentType } from "../types";
 import { formatCurrency, formatDate, formatMonth } from "../utils/format";
 
 export interface ReceiptData {
   numero: string;
+  tipo: PaymentType;
   dataEmissao: string;
   proprietarioNome: string;
   tenantNome: string;
@@ -13,12 +15,28 @@ export interface ReceiptData {
   dataVencimento: string;
   dataPagamento: string;
   formaPagamento?: string | null;
-  valorAluguel: number;
-  valorAguaEsgoto: number;
+  valor: number;
   valorOutros: number;
   descricaoOutros?: string | null;
   valorTotal: number;
 }
+
+const TITULO: Record<PaymentType, string> = {
+  aluguel: "Recibo de Pagamento de Aluguel",
+  agua_esgoto: "Recibo de Pagamento de Água e Esgoto",
+};
+
+const ITEM_LABEL: Record<PaymentType, string> = {
+  aluguel: "Aluguel",
+  agua_esgoto: "Taxa de Água e Esgoto",
+};
+
+const RODAPE: Record<PaymentType, string> = {
+  aluguel:
+    "Este recibo confirma o pagamento integral do valor de aluguel acima referente ao imóvel e período indicados.",
+  agua_esgoto:
+    "Este recibo confirma o pagamento integral da taxa de água e esgoto acima referente ao imóvel e período indicados.",
+};
 
 export function generateReceiptPdfBlob(data: ReceiptData): Blob {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
@@ -26,7 +44,7 @@ export function generateReceiptPdfBlob(data: ReceiptData): Blob {
   let y = 60;
 
   doc.setFontSize(18);
-  doc.text("Recibo de Pagamento de Aluguel", 297.5, y, { align: "center" });
+  doc.text(TITULO[data.tipo], 297.5, y, { align: "center" });
   y += 20;
   doc.setFontSize(10);
   doc.setTextColor(85, 85, 85);
@@ -77,10 +95,7 @@ export function generateReceiptPdfBlob(data: ReceiptData): Blob {
   doc.line(marginX, y + 2, marginX + 175, y + 2);
   y += 24;
 
-  const rows: [string, string][] = [
-    ["Aluguel", formatCurrency(data.valorAluguel)],
-    ["Taxa de Água e Esgoto", formatCurrency(data.valorAguaEsgoto)],
-  ];
+  const rows: [string, string][] = [[ITEM_LABEL[data.tipo], formatCurrency(data.valor)]];
   if (data.valorOutros > 0) {
     rows.push([data.descricaoOutros || "Outros", formatCurrency(data.valorOutros)]);
   }
@@ -116,10 +131,7 @@ export function generateReceiptPdfBlob(data: ReceiptData): Blob {
   y += 26;
   doc.setFontSize(10);
   doc.setTextColor(85, 85, 85);
-  const footer = doc.splitTextToSize(
-    "Este recibo confirma o pagamento integral dos valores acima referentes ao aluguel e à taxa de água e esgoto do imóvel e período indicados.",
-    440
-  );
+  const footer = doc.splitTextToSize(RODAPE[data.tipo], 440);
   doc.text(footer, marginX + 10, y);
 
   return doc.output("blob");
