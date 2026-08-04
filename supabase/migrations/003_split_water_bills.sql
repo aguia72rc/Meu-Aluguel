@@ -34,12 +34,29 @@ alter table payments
   add column if not exists tipo text not null default 'aluguel'
     check (tipo in ('aluguel', 'agua_esgoto'));
 
--- 3) Renomeia valor_aluguel -> valor (agora é só "o valor principal deste
---    tipo de cobrança"). Precisa vir ANTES do passo 4, que insere
---    linhas referenciando a coluna já com o nome novo.
-alter table payments rename column valor_aluguel to valor;
+-- 3) Troca a restrição de unicidade ANTES de inserir qualquer linha nova:
+--    a antiga (contract_id, mes_referencia) impediria a linha de
+--    água/esgoto de conviver com a de aluguel no mesmo contrato/mês.
+alter table payments drop constraint if exists payments_contract_id_mes_referencia_key;
+alter table payments drop constraint if exists payments_contract_tipo_mes_unique;
+alter table payments add constraint payments_contract_tipo_mes_unique
+  unique (contract_id, mes_referencia, tipo);
 
--- 4) Separa o valor da água/esgoto dos lançamentos combinados existentes
+-- 4) Renomeia valor_aluguel -> valor (agora é só "o valor principal deste
+--    tipo de cobrança"). Precisa vir ANTES do passo 5, que insere
+--    linhas referenciando a coluna já com o nome novo. Em bloco
+--    condicional para não quebrar se este script for rodado 2x.
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_name = 'payments' and column_name = 'valor_aluguel'
+  ) then
+    alter table payments rename column valor_aluguel to valor;
+  end if;
+end $$;
+
+-- 5) Separa o valor da água/esgoto dos lançamentos combinados existentes
 --    em novos lançamentos próprios, preservando status e datas de
 --    pagamento (mas sem um recibo em PDF vinculado — ver nota acima)
 insert into payments (
@@ -54,16 +71,10 @@ select
 from payments
 where valor_agua_esgoto > 0;
 
--- 5) Recalcula o total dos lançamentos de aluguel para não incluir mais
+-- 6) Recalcula o total dos lançamentos de aluguel para não incluir mais
 --    a água/esgoto, e remove a coluna antiga
 update payments
   set valor_total = valor + valor_outros
   where tipo = 'aluguel';
 
 alter table payments drop column if exists valor_agua_esgoto;
-
--- 6) Ajusta a restrição de unicidade: agora é 1 lançamento por
---    contrato + mês + tipo (antes era só contrato + mês)
-alter table payments drop constraint if exists payments_contract_id_mes_referencia_key;
-alter table payments add constraint payments_contract_tipo_mes_unique
-  unique (contract_id, mes_referencia, tipo);
