@@ -3,6 +3,7 @@ import {
   FileText,
   LayoutGrid,
   LogOut,
+  Receipt,
   Users,
   Wallet,
 } from "lucide-react";
@@ -15,6 +16,7 @@ const navItems = [
   { to: "/inquilinos", label: "Inquilinos", icon: Users },
   { to: "/contratos", label: "Contratos", icon: FileText },
   { to: "/pagamentos", label: "Pagamentos", icon: Wallet },
+  { to: "/recibos", label: "Recibos", icon: Receipt },
 ];
 
 function initials(name: string) {

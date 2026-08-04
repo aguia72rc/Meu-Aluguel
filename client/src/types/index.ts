@@ -56,6 +56,24 @@ export interface Payment {
   tenant_cpf: string | null;
 }
 
+export interface Receipt {
+  id: number;
+  payment_id: number;
+  numero: string;
+  data_emissao: string;
+  arquivo: string;
+  mes_referencia: string;
+  valor_total: number;
+  valor_aluguel: number;
+  valor_agua_esgoto: number;
+  data_pagamento: string;
+  forma_pagamento: string | null;
+  contract_id: number;
+  property_nome: string;
+  property_endereco: string;
+  tenant_nome: string;
+}
+
 export interface PaymentSummary {
   mesAtual: string;
   recebidoMes: number;

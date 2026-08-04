@@ -6,6 +6,7 @@ import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import Payments from "./pages/Payments";
 import Properties from "./pages/Properties";
+import Receipts from "./pages/Receipts";
 import Tenants from "./pages/Tenants";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -31,6 +32,7 @@ export default function App() {
         <Route path="inquilinos" element={<Tenants />} />
         <Route path="contratos" element={<Contracts />} />
         <Route path="pagamentos" element={<Payments />} />
+        <Route path="recibos" element={<Receipts />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
