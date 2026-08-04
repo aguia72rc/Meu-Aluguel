@@ -5,20 +5,38 @@ export default {
     extend: {
       colors: {
         primary: {
-          50: "#eff6ff",
-          100: "#dbeafe",
-          200: "#bfdbfe",
-          300: "#93c5fd",
-          400: "#60a5fa",
-          500: "#3b82f6",
-          600: "#2563eb",
-          700: "#1d4ed8",
-          800: "#1e40af",
-          900: "#1e3a8a",
+          50: "#eaf2fc",
+          100: "#cde2fb",
+          200: "#9ec5f4",
+          300: "#6da7ec",
+          400: "#3987e5",
+          500: "#2a78d6",
+          600: "#256abf",
+          700: "#1c5cab",
+          800: "#184f95",
+          900: "#0d366b",
         },
+        ink: {
+          DEFAULT: "#0b0b0b",
+          secondary: "#52514e",
+          muted: "#898781",
+        },
+        status: {
+          good: "#0ca30c",
+          warning: "#fab219",
+          serious: "#ec835a",
+          critical: "#d03b3b",
+        },
+        surface: {
+          page: "#f9f9f7",
+          card: "#fcfcfb",
+          border: "#e1e0d9",
+        },
+      },
+      fontFamily: {
+        sans: ["system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
       },
     },
   },
   plugins: [],
 }
-

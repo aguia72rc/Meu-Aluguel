@@ -1,10 +1,23 @@
+import { Pencil, Plus, Trash2, Users } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { api, apiErrorMessage } from "../api/client";
+import EmptyState from "../components/EmptyState";
 import Field from "../components/Field";
 import Modal from "../components/Modal";
+import { useConfirm } from "../context/ConfirmContext";
+import { useToast } from "../context/ToastContext";
 import type { Tenant } from "../types";
 
 const emptyForm = { nome: "", cpf: "", email: "", telefone: "", observacoes: "" };
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase())
+    .join("");
+}
 
 export default function Tenants() {
   const [tenants, setTenants] = useState<Tenant[]>([]);
@@ -13,6 +26,9 @@ export default function Tenants() {
   const [editing, setEditing] = useState<Tenant | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const confirm = useConfirm();
+  const toast = useToast();
 
   async function load() {
     setLoading(true);
@@ -48,6 +64,7 @@ export default function Tenants() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
+    setSubmitting(true);
     const payload = {
       nome: form.nome,
       cpf: form.cpf || null,
@@ -58,73 +75,114 @@ export default function Tenants() {
     try {
       if (editing) {
         await api.put(`/tenants/${editing.id}`, payload);
+        toast.success("Inquilino atualizado.");
       } else {
         await api.post("/tenants", payload);
+        toast.success("Inquilino cadastrado.");
       }
       setModalOpen(false);
       await load();
     } catch (err) {
       setError(apiErrorMessage(err, "Não foi possível salvar o inquilino"));
+    } finally {
+      setSubmitting(false);
     }
   }
 
   async function handleDelete(tenant: Tenant) {
-    if (!confirm(`Excluir o inquilino "${tenant.nome}"?`)) return;
+    const ok = await confirm({
+      title: `Excluir "${tenant.nome}"?`,
+      description: "Essa ação não pode ser desfeita.",
+      confirmLabel: "Excluir",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.delete(`/tenants/${tenant.id}`);
+      toast.success("Inquilino excluído.");
       await load();
     } catch (err) {
-      alert(apiErrorMessage(err, "Não foi possível excluir o inquilino"));
+      toast.error(apiErrorMessage(err, "Não foi possível excluir o inquilino"));
     }
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Inquilinos</h1>
-        <button
-          onClick={openCreate}
-          className="bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
-        >
-          + Novo inquilino
+        <div>
+          <h1 className="text-2xl font-bold text-ink">Inquilinos</h1>
+          <p className="text-sm text-ink-muted mt-0.5">Cadastro de locatários</p>
+        </div>
+        <button onClick={openCreate} className="btn-primary">
+          <Plus size={16} /> Novo inquilino
         </button>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="card overflow-hidden">
         {loading ? (
-          <p className="p-5 text-sm text-gray-500">Carregando...</p>
+          <div className="p-5 space-y-3">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-12 bg-surface-page rounded-lg animate-pulse" />
+            ))}
+          </div>
         ) : tenants.length === 0 ? (
-          <p className="p-5 text-sm text-gray-500">Nenhum inquilino cadastrado ainda.</p>
+          <EmptyState
+            icon={Users}
+            title="Nenhum inquilino cadastrado"
+            description="Cadastre um inquilino para vinculá-lo a um contrato."
+          />
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-gray-500 border-b border-gray-100">
-                <th className="px-5 py-2 font-medium">Nome</th>
-                <th className="px-5 py-2 font-medium">CPF</th>
-                <th className="px-5 py-2 font-medium">Email</th>
-                <th className="px-5 py-2 font-medium">Telefone</th>
-                <th className="px-5 py-2 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {tenants.map((t) => (
-                <tr key={t.id} className="border-b border-gray-50 last:border-0">
-                  <td className="px-5 py-2.5 font-medium text-gray-900">{t.nome}</td>
-                  <td className="px-5 py-2.5">{t.cpf || "-"}</td>
-                  <td className="px-5 py-2.5">{t.email || "-"}</td>
-                  <td className="px-5 py-2.5">{t.telefone || "-"}</td>
-                  <td className="px-5 py-2.5 text-right space-x-3">
-                    <button onClick={() => openEdit(t)} className="text-primary-600 hover:underline">
-                      Editar
-                    </button>
-                    <button onClick={() => handleDelete(t)} className="text-red-600 hover:underline">
-                      Excluir
-                    </button>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-ink-muted border-b border-surface-border">
+                  <th className="px-5 py-2.5 font-medium">Nome</th>
+                  <th className="px-5 py-2.5 font-medium">CPF</th>
+                  <th className="px-5 py-2.5 font-medium">Email</th>
+                  <th className="px-5 py-2.5 font-medium">Telefone</th>
+                  <th className="px-5 py-2.5 font-medium"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {tenants.map((t) => (
+                  <tr
+                    key={t.id}
+                    className="border-b border-surface-border/60 last:border-0 hover:bg-surface-page/60 transition"
+                  >
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="h-8 w-8 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-xs font-semibold shrink-0">
+                          {initials(t.nome)}
+                        </div>
+                        <span className="font-medium text-ink">{t.nome}</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3 text-ink-secondary">{t.cpf || "-"}</td>
+                    <td className="px-5 py-3 text-ink-secondary">{t.email || "-"}</td>
+                    <td className="px-5 py-3 text-ink-secondary">{t.telefone || "-"}</td>
+                    <td className="px-5 py-3">
+                      <div className="flex justify-end gap-1">
+                        <button
+                          onClick={() => openEdit(t)}
+                          className="p-1.5 text-ink-muted hover:text-primary-600 hover:bg-primary-50 rounded-lg transition"
+                          aria-label={`Editar ${t.nome}`}
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(t)}
+                          className="p-1.5 text-ink-muted hover:text-status-critical hover:bg-status-critical/10 rounded-lg transition"
+                          aria-label={`Excluir ${t.nome}`}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -169,20 +227,17 @@ export default function Tenants() {
                 rows={2}
               />
             </Field>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && (
+              <p className="text-sm text-status-critical bg-status-critical/5 border border-status-critical/20 rounded-lg px-3 py-2">
+                {error}
+              </p>
+            )}
             <div className="flex justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setModalOpen(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg"
-              >
+              <button type="button" onClick={() => setModalOpen(false)} className="btn-secondary">
                 Cancelar
               </button>
-              <button
-                type="submit"
-                className="px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg"
-              >
-                Salvar
+              <button type="submit" disabled={submitting} className="btn-primary">
+                {submitting ? "Salvando..." : "Salvar"}
               </button>
             </div>
           </form>
@@ -191,4 +246,3 @@ export default function Tenants() {
     </div>
   );
 }
-

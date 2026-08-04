@@ -1,23 +1,14 @@
+import { Download, Pencil, Receipt, RotateCcw, Trash2, Wallet } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { api, apiErrorMessage } from "../api/client";
+import EmptyState from "../components/EmptyState";
 import Field from "../components/Field";
 import Modal from "../components/Modal";
+import StatusBadge from "../components/StatusBadge";
+import { useConfirm } from "../context/ConfirmContext";
+import { useToast } from "../context/ToastContext";
 import type { Payment } from "../types";
 import { currentMonth, formatCurrency, formatDate, formatMonth } from "../utils/format";
-
-const statusLabel: Record<string, string> = {
-  pendente: "Pendente",
-  atrasado: "Atrasado",
-  pago: "Pago",
-  cancelado: "Cancelado",
-};
-
-const statusClass: Record<string, string> = {
-  pendente: "bg-yellow-100 text-yellow-700",
-  atrasado: "bg-red-100 text-red-700",
-  pago: "bg-green-100 text-green-700",
-  cancelado: "bg-gray-100 text-gray-600",
-};
 
 export default function Payments() {
   const [month, setMonth] = useState(currentMonth());
@@ -26,7 +17,8 @@ export default function Payments() {
   const [generating, setGenerating] = useState(false);
   const [payModalPayment, setPayModalPayment] = useState<Payment | null>(null);
   const [editModalPayment, setEditModalPayment] = useState<Payment | null>(null);
-  const [error, setError] = useState("");
+  const confirm = useConfirm();
+  const toast = useToast();
 
   async function load() {
     setLoading(true);
@@ -46,147 +38,197 @@ export default function Payments() {
 
   async function handleGenerate() {
     setGenerating(true);
-    setError("");
     try {
       const { data } = await api.post("/payments/generate", { mes_referencia: month });
       await load();
       if (data.criados === 0) {
-        alert("Todos os contratos ativos já possuem pagamento gerado para este mês.");
+        toast.info("Todos os contratos ativos já possuem pagamento gerado para este mês.");
+      } else {
+        toast.success(`${data.criados} cobrança(s) gerada(s) para ${formatMonth(month)}.`);
       }
     } catch (err) {
-      setError(apiErrorMessage(err, "Não foi possível gerar os pagamentos do mês"));
+      toast.error(apiErrorMessage(err, "Não foi possível gerar os pagamentos do mês"));
     } finally {
       setGenerating(false);
     }
   }
 
   async function handleDelete(payment: Payment) {
-    if (!confirm("Excluir este lançamento de pagamento?")) return;
+    const ok = await confirm({
+      title: "Excluir este lançamento?",
+      description: `${payment.property_nome} — ${formatMonth(payment.mes_referencia)}`,
+      confirmLabel: "Excluir",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.delete(`/payments/${payment.id}`);
+      toast.success("Lançamento excluído.");
       await load();
     } catch (err) {
-      alert(apiErrorMessage(err, "Não foi possível excluir o pagamento"));
+      toast.error(apiErrorMessage(err, "Não foi possível excluir o pagamento"));
     }
   }
 
   async function handleUndo(payment: Payment) {
-    if (!confirm("Desfazer este pagamento? O recibo emitido será removido.")) return;
+    const ok = await confirm({
+      title: "Desfazer este pagamento?",
+      description: "O recibo emitido será removido junto.",
+      confirmLabel: "Desfazer",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.post(`/payments/${payment.id}/undo-payment`);
+      toast.success("Pagamento desfeito.");
       await load();
     } catch (err) {
-      alert(apiErrorMessage(err, "Não foi possível desfazer o pagamento"));
+      toast.error(apiErrorMessage(err, "Não foi possível desfazer o pagamento"));
     }
   }
 
   async function handleDownloadReceipt(payment: Payment) {
-    const response = await api.get(`/receipts/by-payment/${payment.id}/download`, {
-      responseType: "blob",
-    });
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `recibo-${payment.property_nome}-${payment.mes_referencia}.pdf`;
-    link.click();
-    window.URL.revokeObjectURL(url);
+    try {
+      const response = await api.get(`/receipts/by-payment/${payment.id}/download`, {
+        responseType: "blob",
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `recibo-${payment.property_nome}-${payment.mes_referencia}.pdf`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Não foi possível baixar o recibo"));
+    }
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-2xl font-bold text-gray-900">Pagamentos</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-ink">Pagamentos</h1>
+          <p className="text-sm text-ink-muted mt-0.5">Cobranças mensais e recibos</p>
+        </div>
         <div className="flex items-center gap-3">
           <input
             type="month"
             value={month}
             onChange={(e) => setMonth(e.target.value)}
             className="input w-auto"
+            aria-label="Mês de referência"
           />
-          <button
-            onClick={handleGenerate}
-            disabled={generating}
-            className="bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
-          >
-            {generating ? "Gerando..." : `Gerar cobranças de ${formatMonth(month)}`}
+          <button onClick={handleGenerate} disabled={generating} className="btn-primary whitespace-nowrap">
+            {generating ? "Gerando..." : "Gerar cobranças"}
           </button>
         </div>
       </div>
-      {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="card overflow-hidden">
         {loading ? (
-          <p className="p-5 text-sm text-gray-500">Carregando...</p>
+          <div className="p-5 space-y-3">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-12 bg-surface-page rounded-lg animate-pulse" />
+            ))}
+          </div>
         ) : payments.length === 0 ? (
-          <p className="p-5 text-sm text-gray-500">
-            Nenhum pagamento para {formatMonth(month)}. Clique em "Gerar cobranças" para criar os
-            lançamentos deste mês a partir dos contratos ativos.
-          </p>
+          <EmptyState
+            icon={Wallet}
+            title={`Nenhum pagamento para ${formatMonth(month)}`}
+            description='Clique em "Gerar cobranças" para criar os lançamentos deste mês a partir dos contratos ativos.'
+          />
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-gray-500 border-b border-gray-100">
-                <th className="px-5 py-2 font-medium">Imóvel</th>
-                <th className="px-5 py-2 font-medium">Inquilino</th>
-                <th className="px-5 py-2 font-medium">Vencimento</th>
-                <th className="px-5 py-2 font-medium">Aluguel</th>
-                <th className="px-5 py-2 font-medium">Água/Esgoto</th>
-                <th className="px-5 py-2 font-medium">Total</th>
-                <th className="px-5 py-2 font-medium">Status</th>
-                <th className="px-5 py-2 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {payments.map((p) => (
-                <tr key={p.id} className="border-b border-gray-50 last:border-0">
-                  <td className="px-5 py-2.5 font-medium text-gray-900">{p.property_nome}</td>
-                  <td className="px-5 py-2.5">{p.tenant_nome}</td>
-                  <td className="px-5 py-2.5">{formatDate(p.data_vencimento)}</td>
-                  <td className="px-5 py-2.5">{formatCurrency(p.valor_aluguel)}</td>
-                  <td className="px-5 py-2.5">{formatCurrency(p.valor_agua_esgoto)}</td>
-                  <td className="px-5 py-2.5 font-medium">{formatCurrency(p.valor_total)}</td>
-                  <td className="px-5 py-2.5">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusClass[p.status]}`}>
-                      {statusLabel[p.status]}
-                    </span>
-                  </td>
-                  <td className="px-5 py-2.5 text-right space-x-3 whitespace-nowrap">
-                    {p.status === "pago" ? (
-                      <>
-                        <button
-                          onClick={() => handleDownloadReceipt(p)}
-                          className="text-primary-600 hover:underline"
-                        >
-                          Recibo
-                        </button>
-                        <button onClick={() => handleUndo(p)} className="text-gray-500 hover:underline">
-                          Desfazer
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => setPayModalPayment(p)}
-                          className="text-green-600 hover:underline"
-                        >
-                          Marcar como pago
-                        </button>
-                        <button
-                          onClick={() => setEditModalPayment(p)}
-                          className="text-primary-600 hover:underline"
-                        >
-                          Editar
-                        </button>
-                        <button onClick={() => handleDelete(p)} className="text-red-600 hover:underline">
-                          Excluir
-                        </button>
-                      </>
-                    )}
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-ink-muted border-b border-surface-border">
+                  <th className="px-5 py-2.5 font-medium">Imóvel</th>
+                  <th className="px-5 py-2.5 font-medium">Inquilino</th>
+                  <th className="px-5 py-2.5 font-medium">Vencimento</th>
+                  <th className="px-5 py-2.5 font-medium">Aluguel</th>
+                  <th className="px-5 py-2.5 font-medium">Água/Esgoto</th>
+                  <th className="px-5 py-2.5 font-medium">Total</th>
+                  <th className="px-5 py-2.5 font-medium">Status</th>
+                  <th className="px-5 py-2.5 font-medium"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {payments.map((p) => (
+                  <tr
+                    key={p.id}
+                    className="border-b border-surface-border/60 last:border-0 hover:bg-surface-page/60 transition"
+                  >
+                    <td className="px-5 py-3 font-medium text-ink">{p.property_nome}</td>
+                    <td className="px-5 py-3 text-ink-secondary">{p.tenant_nome}</td>
+                    <td className="px-5 py-3 text-ink-secondary">{formatDate(p.data_vencimento)}</td>
+                    <td className="px-5 py-3 text-ink-secondary tabular-nums">
+                      {formatCurrency(p.valor_aluguel)}
+                    </td>
+                    <td className="px-5 py-3 text-ink-secondary tabular-nums">
+                      {formatCurrency(p.valor_agua_esgoto)}
+                    </td>
+                    <td className="px-5 py-3 font-medium text-ink tabular-nums">
+                      {formatCurrency(p.valor_total)}
+                    </td>
+                    <td className="px-5 py-3">
+                      <StatusBadge status={p.status} />
+                    </td>
+                    <td className="px-5 py-3">
+                      <div className="flex justify-end gap-1">
+                        {p.status === "pago" ? (
+                          <>
+                            <button
+                              onClick={() => handleDownloadReceipt(p)}
+                              className="p-1.5 text-ink-muted hover:text-primary-600 hover:bg-primary-50 rounded-lg transition"
+                              aria-label="Baixar recibo"
+                              title="Baixar recibo"
+                            >
+                              <Download size={15} />
+                            </button>
+                            <button
+                              onClick={() => handleUndo(p)}
+                              className="p-1.5 text-ink-muted hover:text-ink hover:bg-surface-page rounded-lg transition"
+                              aria-label="Desfazer pagamento"
+                              title="Desfazer pagamento"
+                            >
+                              <RotateCcw size={15} />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => setPayModalPayment(p)}
+                              className="p-1.5 text-ink-muted hover:text-status-good hover:bg-status-good/10 rounded-lg transition"
+                              aria-label="Marcar como pago"
+                              title="Marcar como pago"
+                            >
+                              <Receipt size={15} />
+                            </button>
+                            <button
+                              onClick={() => setEditModalPayment(p)}
+                              className="p-1.5 text-ink-muted hover:text-primary-600 hover:bg-primary-50 rounded-lg transition"
+                              aria-label="Editar lançamento"
+                              title="Editar"
+                            >
+                              <Pencil size={15} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(p)}
+                              className="p-1.5 text-ink-muted hover:text-status-critical hover:bg-status-critical/10 rounded-lg transition"
+                              aria-label="Excluir lançamento"
+                              title="Excluir"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -228,6 +270,7 @@ function PayModal({
   const [formaPagamento, setFormaPagamento] = useState("PIX");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const toast = useToast();
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -238,6 +281,7 @@ function PayModal({
         data_pagamento: dataPagamento,
         forma_pagamento: formaPagamento,
       });
+      toast.success("Pagamento registrado e recibo gerado.");
       onPaid();
     } catch (err) {
       setError(apiErrorMessage(err, "Não foi possível registrar o pagamento"));
@@ -249,27 +293,27 @@ function PayModal({
   return (
     <Modal title="Registrar pagamento" onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-4">
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-ink-secondary">
           {payment.property_nome} — {payment.tenant_nome} — {formatMonth(payment.mes_referencia)}
         </p>
-        <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
+        <div className="bg-surface-page rounded-xl p-3.5 text-sm space-y-1.5">
           <div className="flex justify-between">
-            <span className="text-gray-500">Aluguel</span>
-            <span>{formatCurrency(payment.valor_aluguel)}</span>
+            <span className="text-ink-muted">Aluguel</span>
+            <span className="tabular-nums">{formatCurrency(payment.valor_aluguel)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-500">Água e Esgoto</span>
-            <span>{formatCurrency(payment.valor_agua_esgoto)}</span>
+            <span className="text-ink-muted">Água e Esgoto</span>
+            <span className="tabular-nums">{formatCurrency(payment.valor_agua_esgoto)}</span>
           </div>
           {payment.valor_outros > 0 && (
             <div className="flex justify-between">
-              <span className="text-gray-500">{payment.descricao_outros || "Outros"}</span>
-              <span>{formatCurrency(payment.valor_outros)}</span>
+              <span className="text-ink-muted">{payment.descricao_outros || "Outros"}</span>
+              <span className="tabular-nums">{formatCurrency(payment.valor_outros)}</span>
             </div>
           )}
-          <div className="flex justify-between font-semibold pt-1 border-t border-gray-200">
+          <div className="flex justify-between font-semibold pt-1.5 border-t border-surface-border">
             <span>Total</span>
-            <span>{formatCurrency(payment.valor_total)}</span>
+            <span className="tabular-nums">{formatCurrency(payment.valor_total)}</span>
           </div>
         </div>
         <Field label="Data do pagamento">
@@ -294,19 +338,19 @@ function PayModal({
             <option value="Outro">Outro</option>
           </select>
         </Field>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && (
+          <p className="text-sm text-status-critical bg-status-critical/5 border border-status-critical/20 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
         <div className="flex justify-end gap-3 pt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg"
-          >
+          <button type="button" onClick={onClose} className="btn-secondary">
             Cancelar
           </button>
           <button
             type="submit"
             disabled={submitting}
-            className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-60 rounded-lg"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-status-good px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:brightness-110 disabled:opacity-60"
           >
             {submitting ? "Registrando..." : "Confirmar pagamento e gerar recibo"}
           </button>
@@ -332,6 +376,7 @@ function EditPaymentModal({
   const [dataVencimento, setDataVencimento] = useState(payment.data_vencimento.slice(0, 10));
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const toast = useToast();
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -345,6 +390,7 @@ function EditPaymentModal({
         descricao_outros: descricaoOutros || null,
         data_vencimento: dataVencimento,
       });
+      toast.success("Lançamento atualizado.");
       onSaved();
     } catch (err) {
       setError(apiErrorMessage(err, "Não foi possível salvar o pagamento"));
@@ -356,7 +402,7 @@ function EditPaymentModal({
   return (
     <Modal title="Editar lançamento" onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-4">
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-ink-secondary">
           {payment.property_nome} — {payment.tenant_nome} — {formatMonth(payment.mes_referencia)}
         </p>
         <Field label="Vencimento">
@@ -391,7 +437,7 @@ function EditPaymentModal({
             />
           </Field>
         </div>
-        <p className="text-xs text-gray-500 -mt-2">
+        <p className="text-xs text-ink-muted -mt-2">
           Ajuste a taxa de água e esgoto deste mês caso o valor tenha variado em relação ao valor
           fixo do contrato.
         </p>
@@ -415,20 +461,16 @@ function EditPaymentModal({
             />
           </Field>
         </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && (
+          <p className="text-sm text-status-critical bg-status-critical/5 border border-status-critical/20 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
         <div className="flex justify-end gap-3 pt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg"
-          >
+          <button type="button" onClick={onClose} className="btn-secondary">
             Cancelar
           </button>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-60 rounded-lg"
-          >
+          <button type="submit" disabled={submitting} className="btn-primary">
             {submitting ? "Salvando..." : "Salvar"}
           </button>
         </div>

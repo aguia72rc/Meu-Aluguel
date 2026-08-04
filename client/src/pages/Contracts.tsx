@@ -1,7 +1,12 @@
+import { FileText, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { api, apiErrorMessage } from "../api/client";
+import EmptyState from "../components/EmptyState";
 import Field from "../components/Field";
 import Modal from "../components/Modal";
+import StatusBadge from "../components/StatusBadge";
+import { useConfirm } from "../context/ConfirmContext";
+import { useToast } from "../context/ToastContext";
 import type { Contract, Property, Tenant } from "../types";
 import { formatCurrency, formatDate } from "../utils/format";
 
@@ -26,6 +31,9 @@ export default function Contracts() {
   const [editing, setEditing] = useState<Contract | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const confirm = useConfirm();
+  const toast = useToast();
 
   async function load() {
     setLoading(true);
@@ -81,6 +89,7 @@ export default function Contracts() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
+    setSubmitting(true);
     const payload = {
       property_id: Number(form.property_id),
       tenant_id: Number(form.tenant_id),
@@ -95,93 +104,126 @@ export default function Contracts() {
     try {
       if (editing) {
         await api.put(`/contracts/${editing.id}`, payload);
+        toast.success("Contrato atualizado.");
       } else {
         await api.post("/contracts", payload);
+        toast.success("Contrato criado.");
       }
       setModalOpen(false);
       await load();
     } catch (err) {
       setError(apiErrorMessage(err, "Não foi possível salvar o contrato"));
+    } finally {
+      setSubmitting(false);
     }
   }
 
   async function handleDelete(contract: Contract) {
-    if (!confirm("Excluir este contrato?")) return;
+    const ok = await confirm({
+      title: "Excluir este contrato?",
+      description: "Essa ação não pode ser desfeita.",
+      confirmLabel: "Excluir",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.delete(`/contracts/${contract.id}`);
+      toast.success("Contrato excluído.");
       await load();
     } catch (err) {
-      alert(apiErrorMessage(err, "Não foi possível excluir o contrato"));
+      toast.error(apiErrorMessage(err, "Não foi possível excluir o contrato"));
     }
   }
+
+  const canCreate = properties.length > 0 && tenants.length > 0;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Contratos</h1>
-        <button
-          onClick={openCreate}
-          disabled={properties.length === 0 || tenants.length === 0}
-          className="bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
-        >
-          + Novo contrato
+        <div>
+          <h1 className="text-2xl font-bold text-ink">Contratos</h1>
+          <p className="text-sm text-ink-muted mt-0.5">Vínculo entre imóveis e inquilinos</p>
+        </div>
+        <button onClick={openCreate} disabled={!canCreate} className="btn-primary">
+          <Plus size={16} /> Novo contrato
         </button>
       </div>
-      {(properties.length === 0 || tenants.length === 0) && (
-        <p className="text-sm text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2">
+      {!canCreate && (
+        <p className="text-sm text-[#9a6a00] bg-status-warning/10 border border-status-warning/30 rounded-lg px-4 py-2.5">
           Cadastre ao menos um imóvel e um inquilino antes de criar um contrato.
         </p>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="card overflow-hidden">
         {loading ? (
-          <p className="p-5 text-sm text-gray-500">Carregando...</p>
+          <div className="p-5 space-y-3">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-12 bg-surface-page rounded-lg animate-pulse" />
+            ))}
+          </div>
         ) : contracts.length === 0 ? (
-          <p className="p-5 text-sm text-gray-500">Nenhum contrato cadastrado ainda.</p>
+          <EmptyState
+            icon={FileText}
+            title="Nenhum contrato cadastrado"
+            description="Crie um contrato vinculando um imóvel a um inquilino."
+          />
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-gray-500 border-b border-gray-100">
-                <th className="px-5 py-2 font-medium">Imóvel</th>
-                <th className="px-5 py-2 font-medium">Inquilino</th>
-                <th className="px-5 py-2 font-medium">Início</th>
-                <th className="px-5 py-2 font-medium">Vencimento</th>
-                <th className="px-5 py-2 font-medium">Aluguel</th>
-                <th className="px-5 py-2 font-medium">Água/Esgoto</th>
-                <th className="px-5 py-2 font-medium">Status</th>
-                <th className="px-5 py-2 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {contracts.map((c) => (
-                <tr key={c.id} className="border-b border-gray-50 last:border-0">
-                  <td className="px-5 py-2.5 font-medium text-gray-900">{c.property_nome}</td>
-                  <td className="px-5 py-2.5">{c.tenant_nome}</td>
-                  <td className="px-5 py-2.5">{formatDate(c.data_inicio)}</td>
-                  <td className="px-5 py-2.5">Dia {c.dia_vencimento}</td>
-                  <td className="px-5 py-2.5">{formatCurrency(c.valor_aluguel)}</td>
-                  <td className="px-5 py-2.5">{formatCurrency(c.valor_agua_esgoto)}</td>
-                  <td className="px-5 py-2.5">
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                        c.status === "ativo" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
-                      }`}
-                    >
-                      {c.status === "ativo" ? "Ativo" : "Encerrado"}
-                    </span>
-                  </td>
-                  <td className="px-5 py-2.5 text-right space-x-3">
-                    <button onClick={() => openEdit(c)} className="text-primary-600 hover:underline">
-                      Editar
-                    </button>
-                    <button onClick={() => handleDelete(c)} className="text-red-600 hover:underline">
-                      Excluir
-                    </button>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-ink-muted border-b border-surface-border">
+                  <th className="px-5 py-2.5 font-medium">Imóvel</th>
+                  <th className="px-5 py-2.5 font-medium">Inquilino</th>
+                  <th className="px-5 py-2.5 font-medium">Início</th>
+                  <th className="px-5 py-2.5 font-medium">Vencimento</th>
+                  <th className="px-5 py-2.5 font-medium">Aluguel</th>
+                  <th className="px-5 py-2.5 font-medium">Água/Esgoto</th>
+                  <th className="px-5 py-2.5 font-medium">Status</th>
+                  <th className="px-5 py-2.5 font-medium"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {contracts.map((c) => (
+                  <tr
+                    key={c.id}
+                    className="border-b border-surface-border/60 last:border-0 hover:bg-surface-page/60 transition"
+                  >
+                    <td className="px-5 py-3 font-medium text-ink">{c.property_nome}</td>
+                    <td className="px-5 py-3 text-ink-secondary">{c.tenant_nome}</td>
+                    <td className="px-5 py-3 text-ink-secondary">{formatDate(c.data_inicio)}</td>
+                    <td className="px-5 py-3 text-ink-secondary">Dia {c.dia_vencimento}</td>
+                    <td className="px-5 py-3 text-ink-secondary tabular-nums">
+                      {formatCurrency(c.valor_aluguel)}
+                    </td>
+                    <td className="px-5 py-3 text-ink-secondary tabular-nums">
+                      {formatCurrency(c.valor_agua_esgoto)}
+                    </td>
+                    <td className="px-5 py-3">
+                      <StatusBadge status={c.status} />
+                    </td>
+                    <td className="px-5 py-3">
+                      <div className="flex justify-end gap-1">
+                        <button
+                          onClick={() => openEdit(c)}
+                          className="p-1.5 text-ink-muted hover:text-primary-600 hover:bg-primary-50 rounded-lg transition"
+                          aria-label="Editar contrato"
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(c)}
+                          className="p-1.5 text-ink-muted hover:text-status-critical hover:bg-status-critical/10 rounded-lg transition"
+                          aria-label="Excluir contrato"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -291,20 +333,17 @@ export default function Contracts() {
                 rows={2}
               />
             </Field>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && (
+              <p className="text-sm text-status-critical bg-status-critical/5 border border-status-critical/20 rounded-lg px-3 py-2">
+                {error}
+              </p>
+            )}
             <div className="flex justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setModalOpen(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg"
-              >
+              <button type="button" onClick={() => setModalOpen(false)} className="btn-secondary">
                 Cancelar
               </button>
-              <button
-                type="submit"
-                className="px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg"
-              >
-                Salvar
+              <button type="submit" disabled={submitting} className="btn-primary">
+                {submitting ? "Salvando..." : "Salvar"}
               </button>
             </div>
           </form>
@@ -313,4 +352,3 @@ export default function Contracts() {
     </div>
   );
 }
-

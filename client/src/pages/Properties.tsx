@@ -1,7 +1,11 @@
+import { Building2, Droplets, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { api, apiErrorMessage } from "../api/client";
+import EmptyState from "../components/EmptyState";
 import Field from "../components/Field";
 import Modal from "../components/Modal";
+import { useConfirm } from "../context/ConfirmContext";
+import { useToast } from "../context/ToastContext";
 import type { Property } from "../types";
 import { formatCurrency } from "../utils/format";
 
@@ -22,6 +26,9 @@ export default function Properties() {
   const [editing, setEditing] = useState<Property | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const confirm = useConfirm();
+  const toast = useToast();
 
   async function load() {
     setLoading(true);
@@ -59,6 +66,7 @@ export default function Properties() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
+    setSubmitting(true);
     const payload = {
       nome: form.nome,
       endereco: form.endereco,
@@ -71,92 +79,134 @@ export default function Properties() {
     try {
       if (editing) {
         await api.put(`/properties/${editing.id}`, payload);
+        toast.success("Imóvel atualizado.");
       } else {
         await api.post("/properties", payload);
+        toast.success("Imóvel cadastrado.");
       }
       setModalOpen(false);
       await load();
     } catch (err) {
       setError(apiErrorMessage(err, "Não foi possível salvar o imóvel"));
+    } finally {
+      setSubmitting(false);
     }
   }
 
   async function handleDelete(property: Property) {
-    if (!confirm(`Excluir o imóvel "${property.nome}"?`)) return;
+    const ok = await confirm({
+      title: `Excluir "${property.nome}"?`,
+      description: "Essa ação não pode ser desfeita.",
+      confirmLabel: "Excluir",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.delete(`/properties/${property.id}`);
+      toast.success("Imóvel excluído.");
       await load();
     } catch (err) {
-      alert(apiErrorMessage(err, "Não foi possível excluir o imóvel"));
+      toast.error(apiErrorMessage(err, "Não foi possível excluir o imóvel"));
     }
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Imóveis</h1>
-        <button
-          onClick={openCreate}
-          className="bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
-        >
-          + Novo imóvel
+        <div>
+          <h1 className="text-2xl font-bold text-ink">Imóveis</h1>
+          <p className="text-sm text-ink-muted mt-0.5">Cadastro de propriedades e valores</p>
+        </div>
+        <button onClick={openCreate} className="btn-primary">
+          <Plus size={16} /> Novo imóvel
         </button>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="card overflow-hidden">
         {loading ? (
-          <p className="p-5 text-sm text-gray-500">Carregando...</p>
+          <div className="p-5 space-y-3">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-12 bg-surface-page rounded-lg animate-pulse" />
+            ))}
+          </div>
         ) : properties.length === 0 ? (
-          <p className="p-5 text-sm text-gray-500">Nenhum imóvel cadastrado ainda.</p>
+          <EmptyState
+            icon={Building2}
+            title="Nenhum imóvel cadastrado"
+            description="Cadastre seu primeiro imóvel para começar a controlar aluguel e contratos."
+          />
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-gray-500 border-b border-gray-100">
-                <th className="px-5 py-2 font-medium">Nome</th>
-                <th className="px-5 py-2 font-medium">Endereço</th>
-                <th className="px-5 py-2 font-medium">Aluguel</th>
-                <th className="px-5 py-2 font-medium">Água/Esgoto</th>
-                <th className="px-5 py-2 font-medium">Status</th>
-                <th className="px-5 py-2 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {properties.map((p) => (
-                <tr key={p.id} className="border-b border-gray-50 last:border-0">
-                  <td className="px-5 py-2.5 font-medium text-gray-900">{p.nome}</td>
-                  <td className="px-5 py-2.5">
-                    {p.endereco}
-                    {p.cidade ? `, ${p.cidade}` : ""}
-                  </td>
-                  <td className="px-5 py-2.5">{formatCurrency(p.valor_aluguel)}</td>
-                  <td className="px-5 py-2.5">{formatCurrency(p.valor_agua_esgoto)}</td>
-                  <td className="px-5 py-2.5">
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                        p.ativo ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
-                      }`}
-                    >
-                      {p.ativo ? "Ativo" : "Inativo"}
-                    </span>
-                  </td>
-                  <td className="px-5 py-2.5 text-right space-x-3">
-                    <button
-                      onClick={() => openEdit(p)}
-                      className="text-primary-600 hover:underline"
-                    >
-                      Editar
-                    </button>
-                    <button
-                      onClick={() => handleDelete(p)}
-                      className="text-red-600 hover:underline"
-                    >
-                      Excluir
-                    </button>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-ink-muted border-b border-surface-border">
+                  <th className="px-5 py-2.5 font-medium">Nome</th>
+                  <th className="px-5 py-2.5 font-medium">Endereço</th>
+                  <th className="px-5 py-2.5 font-medium">Aluguel</th>
+                  <th className="px-5 py-2.5 font-medium">Água/Esgoto</th>
+                  <th className="px-5 py-2.5 font-medium">Status</th>
+                  <th className="px-5 py-2.5 font-medium"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {properties.map((p) => (
+                  <tr
+                    key={p.id}
+                    className="border-b border-surface-border/60 last:border-0 hover:bg-surface-page/60 transition"
+                  >
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="h-8 w-8 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center shrink-0">
+                          <Building2 size={16} />
+                        </div>
+                        <span className="font-medium text-ink">{p.nome}</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3 text-ink-secondary">
+                      {p.endereco}
+                      {p.cidade ? `, ${p.cidade}` : ""}
+                    </td>
+                    <td className="px-5 py-3 text-ink-secondary tabular-nums">
+                      {formatCurrency(p.valor_aluguel)}
+                    </td>
+                    <td className="px-5 py-3 text-ink-secondary tabular-nums">
+                      <span className="inline-flex items-center gap-1">
+                        <Droplets size={13} className="text-primary-400" />
+                        {formatCurrency(p.valor_agua_esgoto)}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3">
+                      <span
+                        className={`badge ${
+                          p.ativo ? "bg-status-good/10 text-status-good" : "bg-ink-muted/10 text-ink-muted"
+                        }`}
+                      >
+                        {p.ativo ? "Ativo" : "Inativo"}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3">
+                      <div className="flex justify-end gap-1">
+                        <button
+                          onClick={() => openEdit(p)}
+                          className="p-1.5 text-ink-muted hover:text-primary-600 hover:bg-primary-50 rounded-lg transition"
+                          aria-label={`Editar ${p.nome}`}
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(p)}
+                          className="p-1.5 text-ink-muted hover:text-status-critical hover:bg-status-critical/10 rounded-lg transition"
+                          aria-label={`Excluir ${p.nome}`}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -217,28 +267,26 @@ export default function Properties() {
                 rows={2}
               />
             </Field>
-            <label className="flex items-center gap-2 text-sm text-gray-700">
+            <label className="flex items-center gap-2 text-sm text-ink-secondary">
               <input
                 type="checkbox"
                 checked={form.ativo}
                 onChange={(e) => setForm({ ...form, ativo: e.target.checked })}
+                className="rounded border-surface-border text-primary-500 focus:ring-primary-400"
               />
               Imóvel ativo
             </label>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && (
+              <p className="text-sm text-status-critical bg-status-critical/5 border border-status-critical/20 rounded-lg px-3 py-2">
+                {error}
+              </p>
+            )}
             <div className="flex justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setModalOpen(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg"
-              >
+              <button type="button" onClick={() => setModalOpen(false)} className="btn-secondary">
                 Cancelar
               </button>
-              <button
-                type="submit"
-                className="px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg"
-              >
-                Salvar
+              <button type="submit" disabled={submitting} className="btn-primary">
+                {submitting ? "Salvando..." : "Salvar"}
               </button>
             </div>
           </form>
@@ -247,4 +295,3 @@ export default function Properties() {
     </div>
   );
 }
-
