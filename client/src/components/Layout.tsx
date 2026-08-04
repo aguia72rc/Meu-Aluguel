@@ -4,10 +4,11 @@ import {
   LayoutGrid,
   LogOut,
   Receipt,
+  User,
   Users,
   Wallet,
 } from "lucide-react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 const navItems = [
@@ -17,6 +18,7 @@ const navItems = [
   { to: "/contratos", label: "Contratos", icon: FileText },
   { to: "/pagamentos", label: "Pagamentos", icon: Wallet },
   { to: "/recibos", label: "Recibos", icon: Receipt },
+  { to: "/perfil", label: "Perfil", icon: User },
 ];
 
 function initials(name: string) {
@@ -68,13 +70,19 @@ export default function Layout() {
         </nav>
         <div className="p-3 border-t border-surface-border">
           <div className="flex items-center gap-3 px-2 py-2">
-            <div className="h-9 w-9 shrink-0 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-xs font-semibold">
-              {initials(displayName)}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-ink truncate">{displayName}</p>
-              <p className="text-xs text-ink-muted truncate">{user?.email}</p>
-            </div>
+            <Link
+              to="/perfil"
+              className="flex items-center gap-3 min-w-0 flex-1 rounded-lg -mx-1 px-1 py-1 hover:bg-surface-page transition"
+              title="Editar perfil"
+            >
+              <div className="h-9 w-9 shrink-0 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-xs font-semibold">
+                {initials(displayName)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-ink truncate">{displayName}</p>
+                <p className="text-xs text-ink-muted truncate">{user?.email}</p>
+              </div>
+            </Link>
             <button
               onClick={handleLogout}
               className="shrink-0 text-ink-muted hover:text-status-critical transition p-1.5 rounded-lg hover:bg-status-critical/10"

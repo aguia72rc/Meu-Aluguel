@@ -5,6 +5,7 @@ import Contracts from "./pages/Contracts";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import Payments from "./pages/Payments";
+import Profile from "./pages/Profile";
 import Properties from "./pages/Properties";
 import Receipts from "./pages/Receipts";
 import Tenants from "./pages/Tenants";
@@ -34,6 +35,7 @@ export default function App() {
         <Route path="contratos" element={<Contracts />} />
         <Route path="pagamentos" element={<Payments />} />
         <Route path="recibos" element={<Receipts />} />
+        <Route path="perfil" element={<Profile />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
