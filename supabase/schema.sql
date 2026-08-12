@@ -125,6 +125,17 @@ create table if not exists receipts (
 );
 
 -- ─────────────────────────────────────────────────────────────
+-- Tokens do feed de calendário (assinatura .ics para iPhone/Google
+-- Calendar/Outlook) — servidos pela Edge Function "calendar-feed"
+-- ─────────────────────────────────────────────────────────────
+create table if not exists calendar_feed_tokens (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  token text not null unique default encode(gen_random_bytes(24), 'hex'),
+  created_at timestamptz not null default now()
+);
+
+-- ─────────────────────────────────────────────────────────────
 -- Row Level Security — qualquer usuário autenticado (administrador)
 -- vê e edita todos os dados. Não há isolamento por usuário: todo
 -- login criado em Authentication > Users é um administrador com
@@ -138,6 +149,7 @@ alter table tenants enable row level security;
 alter table contracts enable row level security;
 alter table payments enable row level security;
 alter table receipts enable row level security;
+alter table calendar_feed_tokens enable row level security;
 
 create policy "properties_authenticated_all" on properties
   for all to authenticated using (true) with check (true);
@@ -152,6 +164,9 @@ create policy "payments_authenticated_all" on payments
   for all to authenticated using (true) with check (true);
 
 create policy "receipts_authenticated_all" on receipts
+  for all to authenticated using (true) with check (true);
+
+create policy "calendar_feed_tokens_authenticated_all" on calendar_feed_tokens
   for all to authenticated using (true) with check (true);
 
 -- ─────────────────────────────────────────────────────────────

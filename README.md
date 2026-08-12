@@ -12,6 +12,7 @@ Sistema web para gestão de imóveis alugados: cadastro de imóveis e inquilinos
 - **Pagamentos**: aluguel e água/esgoto são cobranças **totalmente independentes**, cada uma em sua própria aba, com vencimento, pagamento e recibo próprios. "Gerar cobranças" cria as duas de uma vez a partir dos contratos ativos; permite ajustar valores pontuais (ex: conta de água variou naquele mês) ou lançar valores extras (ex: multa por atraso).
 - **Recibos**: ao marcar um pagamento como pago, um recibo em PDF específico daquele tipo (Aluguel ou Água e Esgoto) é gerado no navegador e enviado para o Supabase Storage, disponível para download a qualquer momento na tela de Recibos.
 - **Painel**: resumo do mês (recebido, pendente, atrasado), gráfico de receita dos últimos 6 meses e próximos vencimentos.
+- **Calendário (iPhone / Google Calendar / Outlook)**: link único de assinatura, gerado na tela de Perfil, com vencimentos pendentes, atrasos e lembretes de renovação de contrato — atualiza sozinho, sem precisar exportar nada de novo.
 - Login via Supabase Auth (e-mail e senha).
 
 ## 1. Criar o projeto no Supabase
@@ -60,6 +61,20 @@ O repositório já vem com um workflow (`.github/workflows/deploy-pages.yml`) qu
 
 > A `anon key` do Supabase é uma chave pública (protegida pelas políticas de RLS do banco), então não há problema em ela ficar embutida no site publicado.
 
+## 4. Publicar a assinatura de calendário (opcional)
+
+Para usar o link de calendário (iPhone / Google Calendar / Outlook), publique a Edge Function que gera o feed. Não precisa da CLI do Supabase — dá pra fazer tudo pelo painel:
+
+1. No projeto Supabase, vá em **Edge Functions > Deploy a new function**.
+2. Nome da função: `calendar-feed`.
+3. Cole o conteúdo de [`supabase/functions/calendar-feed/index.ts`](supabase/functions/calendar-feed/index.ts) no editor e clique em **Deploy**.
+4. **Importante:** nas configurações dessa função, **desligue "Enforce JWT Verification"**. A função usa seu próprio token (na URL) como autenticação — apps de calendário não conseguem enviar um login do Supabase, então essa checagem do Supabase bloquearia a requisição antes mesmo dela chegar na função.
+5. Rode [`supabase/migrations/004_calendar_feed.sql`](supabase/migrations/004_calendar_feed.sql) no SQL Editor (cria a tabela que guarda o token do link).
+
+Depois disso, na tela de **Perfil** do sistema, clique em "Gerar link do calendário" e siga as instruções na tela para assinar no iPhone ou no Google Calendar.
+
+> O link do calendário funciona como uma senha: quem tiver o link vê os vencimentos e valores. Trate-o como algo privado, e gere um novo (revogando o antigo) se ele vazar.
+
 ## Fluxo de uso
 
 1. Cadastre seus **imóveis**, informando o valor do aluguel e da taxa de água e esgoto.
@@ -71,6 +86,8 @@ O repositório já vem com um workflow (`.github/workflows/deploy-pages.yml`) qu
 ## Estrutura do projeto
 
 ```
-client/     Aplicativo React + Vite + TypeScript + Tailwind CSS
-supabase/   schema.sql — schema do banco, políticas de RLS e bucket de recibos
+client/               Aplicativo React + Vite + TypeScript + Tailwind CSS
+supabase/schema.sql   Schema do banco, políticas de RLS e bucket de recibos
+supabase/migrations/  Migrações incrementais para projetos já existentes
+supabase/functions/   Edge Function calendar-feed (assinatura de calendário)
 ```
