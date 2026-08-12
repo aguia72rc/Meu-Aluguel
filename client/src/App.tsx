@@ -1,8 +1,9 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Layout from "./components/Layout";
 import { useAuth } from "./context/AuthContext";
 import Contracts from "./pages/Contracts";
 import Dashboard from "./pages/Dashboard";
+import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Payments from "./pages/Payments";
 import Profile from "./pages/Profile";
@@ -11,10 +12,16 @@ import Receipts from "./pages/Receipts";
 import TenantHome from "./pages/TenantHome";
 import Tenants from "./pages/Tenants";
 
+// Quem ainda não fez login vê a landing page (apresentação + botão
+// "Entrar") na raiz do site; qualquer outra rota exige login de verdade.
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
   if (loading) return null;
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) {
+    if (location.pathname === "/") return <Landing />;
+    return <Navigate to="/login" replace />;
+  }
   return <>{children}</>;
 }
 
