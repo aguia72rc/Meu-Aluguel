@@ -61,11 +61,18 @@ export function receiptMessage(params: {
   );
 }
 
-export function tenantPortalMessage(params: { tenantNome: string; portalUrl: string }): string {
-  const { tenantNome, portalUrl } = params;
+export function tenantLoginMessage(params: {
+  tenantNome: string;
+  email: string;
+  password: string;
+  loginUrl: string;
+}): string {
+  const { tenantNome, email, password, loginUrl } = params;
   const primeiroNome = tenantNome.split(" ")[0];
   return (
-    `Olá, ${primeiroNome}! Aqui está o seu link pessoal para acompanhar pagamentos, baixar recibos ` +
-    `e ver o prazo do seu contrato a qualquer momento: ${portalUrl}`
+    `Olá, ${primeiroNome}! Criei seu acesso ao Meu Aluguel, onde você pode acompanhar o prazo do seu ` +
+    `contrato e baixar seus recibos de aluguel e água/esgoto a qualquer momento.\n\n` +
+    `Link: ${loginUrl}\nE-mail: ${email}\nSenha: ${password}\n\n` +
+    `Depois de entrar, recomendo trocar a senha.`
   );
 }

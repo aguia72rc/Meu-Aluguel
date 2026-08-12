@@ -8,8 +8,8 @@ import Payments from "./pages/Payments";
 import Profile from "./pages/Profile";
 import Properties from "./pages/Properties";
 import Receipts from "./pages/Receipts";
+import TenantHome from "./pages/TenantHome";
 import Tenants from "./pages/Tenants";
-import TenantPortal from "./pages/TenantPortal";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -18,19 +18,25 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-export default function App() {
+// Depois do login, inquilinos e administradores veem telas completamente
+// diferentes — o RLS do banco já restringe o que cada um consegue ler, mas
+// aqui a gente evita nem tentar renderizar/navegar para as rotas de
+// administração quando quem está logado é um inquilino.
+function RoleRouter() {
+  const { isTenant } = useAuth();
+
+  if (isTenant) {
+    return (
+      <Routes>
+        <Route path="/" element={<TenantHome />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    );
+  }
+
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/portal/:token" element={<TenantPortal />} />
-      <Route
-        path="/"
-        element={
-          <RequireAuth>
-            <Layout />
-          </RequireAuth>
-        }
-      >
+      <Route element={<Layout />}>
         <Route index element={<Dashboard />} />
         <Route path="imoveis" element={<Properties />} />
         <Route path="inquilinos" element={<Tenants />} />
@@ -40,6 +46,22 @@ export default function App() {
         <Route path="perfil" element={<Profile />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route
+        path="/*"
+        element={
+          <RequireAuth>
+            <RoleRouter />
+          </RequireAuth>
+        }
+      />
     </Routes>
   );
 }

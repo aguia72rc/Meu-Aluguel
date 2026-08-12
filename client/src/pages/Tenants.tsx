@@ -1,4 +1,4 @@
-import { Check, Copy, Link2, MessageCircle, Pencil, Plus, RefreshCw, Trash2, Users } from "lucide-react";
+import { Check, Copy, KeyRound, MessageCircle, Pencil, Plus, RefreshCw, Trash2, Users } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import EmptyState from "../components/EmptyState";
 import Field from "../components/Field";
@@ -7,9 +7,13 @@ import { useConfirm } from "../context/ConfirmContext";
 import { useToast } from "../context/ToastContext";
 import { errorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
-import { getOrCreatePortalLink, regeneratePortalLink } from "../lib/tenantPortal";
-import { buildWhatsAppLink, tenantPortalMessage } from "../lib/whatsapp";
+import { generatePassword, hasTenantLogin, saveTenantLogin } from "../lib/tenantAccounts";
+import { buildWhatsAppLink, tenantLoginMessage } from "../lib/whatsapp";
 import type { Tenant } from "../types";
+
+function loginUrl(): string {
+  return `${window.location.origin}${import.meta.env.BASE_URL}#/login`;
+}
 
 const emptyForm = { nome: "", cpf: "", email: "", telefone: "", observacoes: "" };
 
@@ -30,7 +34,7 @@ export default function Tenants() {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [portalTenant, setPortalTenant] = useState<Tenant | null>(null);
+  const [loginTenant, setLoginTenant] = useState<Tenant | null>(null);
   const confirm = useConfirm();
   const toast = useToast();
 
@@ -169,12 +173,12 @@ export default function Tenants() {
                     <td className="px-5 py-3">
                       <div className="flex justify-end gap-1">
                         <button
-                          onClick={() => setPortalTenant(t)}
+                          onClick={() => setLoginTenant(t)}
                           className="p-1.5 text-ink-muted hover:text-primary-600 hover:bg-primary-50 rounded-lg transition"
-                          aria-label={`Portal de ${t.nome}`}
-                          title="Portal do inquilino"
+                          aria-label={`Login de ${t.nome}`}
+                          title="Login do inquilino"
                         >
-                          <Link2 size={15} />
+                          <KeyRound size={15} />
                         </button>
                         <button
                           onClick={() => openEdit(t)}
@@ -258,116 +262,152 @@ export default function Tenants() {
         </Modal>
       )}
 
-      {portalTenant && (
-        <PortalLinkModal tenant={portalTenant} onClose={() => setPortalTenant(null)} />
+      {loginTenant && (
+        <TenantLoginModal tenant={loginTenant} onClose={() => setLoginTenant(null)} />
       )}
     </div>
   );
 }
 
-function PortalLinkModal({ tenant, onClose }: { tenant: Tenant; onClose: () => void }) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [regenerating, setRegenerating] = useState(false);
+function TenantLoginModal({ tenant, onClose }: { tenant: Tenant; onClose: () => void }) {
+  const [checkingExisting, setCheckingExisting] = useState(true);
+  const [alreadyHasLogin, setAlreadyHasLogin] = useState(false);
+  const [email, setEmail] = useState(tenant.email ?? "");
+  const [password, setPassword] = useState(generatePassword());
   const [copied, setCopied] = useState(false);
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [saved, setSaved] = useState(false);
   const toast = useToast();
-  const confirm = useConfirm();
-
-  async function load() {
-    setLoading(true);
-    try {
-      setUrl(await getOrCreatePortalLink(tenant.id));
-    } catch (err) {
-      toast.error(errorMessage(err, "Não foi possível gerar o link do portal"));
-    } finally {
-      setLoading(false);
-    }
-  }
 
   useEffect(() => {
-    load();
+    hasTenantLogin(tenant.id)
+      .then(setAlreadyHasLogin)
+      .catch((err) => toast.error(errorMessage(err, "Não foi possível verificar o login")))
+      .finally(() => setCheckingExisting(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleRegenerate() {
-    const ok = await confirm({
-      title: "Gerar um novo link?",
-      description: "O link atual para de funcionar imediatamente.",
-      confirmLabel: "Gerar novo link",
-    });
-    if (!ok) return;
-    setRegenerating(true);
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError("");
+    setSubmitting(true);
     try {
-      setUrl(await regeneratePortalLink(tenant.id));
-      toast.success("Novo link gerado.");
+      await saveTenantLogin({ tenantId: tenant.id, email, password });
+      setSaved(true);
+      toast.success(alreadyHasLogin ? "Senha redefinida." : "Login criado.");
     } catch (err) {
-      toast.error(errorMessage(err, "Não foi possível gerar o link"));
+      setError(errorMessage(err, "Não foi possível salvar o login"));
     } finally {
-      setRegenerating(false);
+      setSubmitting(false);
     }
   }
 
   async function handleCopy() {
-    if (!url) return;
-    await navigator.clipboard.writeText(url);
+    await navigator.clipboard.writeText(`E-mail: ${email}\nSenha: ${password}`);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
 
-  const whatsappLink = url
-    ? buildWhatsAppLink(tenant.telefone, tenantPortalMessage({ tenantNome: tenant.nome, portalUrl: url }))
-    : null;
+  const whatsappLink = buildWhatsAppLink(
+    tenant.telefone,
+    tenantLoginMessage({ tenantNome: tenant.nome, email, password, loginUrl: loginUrl() })
+  );
 
   return (
-    <Modal title={`Portal de ${tenant.nome}`} onClose={onClose}>
-      <div className="space-y-4">
-        <p className="text-sm text-ink-secondary">
-          Link pessoal e sem senha para {tenant.nome} acompanhar pagamentos, baixar recibos e ver o
-          prazo até o fim do contrato — a qualquer momento, sem precisar falar com você.
-        </p>
-        {loading ? (
-          <div className="h-10 bg-surface-page rounded-lg animate-pulse" />
-        ) : url ? (
-          <>
+    <Modal title={`Login de ${tenant.nome}`} onClose={onClose}>
+      {checkingExisting ? (
+        <div className="h-10 bg-surface-page rounded-lg animate-pulse" />
+      ) : saved ? (
+        <div className="space-y-4">
+          <p className="text-sm text-ink-secondary">
+            Pronto. Envie os dados abaixo para {tenant.nome} acessar o próprio prazo de contrato e
+            baixar os recibos — só falta enviar.
+          </p>
+          <div className="bg-surface-page rounded-xl p-3.5 text-sm space-y-1.5">
+            <div className="flex justify-between gap-3">
+              <span className="text-ink-muted">E-mail</span>
+              <span className="font-medium text-ink truncate">{email}</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span className="text-ink-muted">Senha</span>
+              <span className="font-medium text-ink tabular-nums">{password}</span>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleCopy} className="btn-secondary flex-1 justify-center">
+              {copied ? <Check size={16} /> : <Copy size={16} />}
+              {copied ? "Copiado" : "Copiar dados"}
+            </button>
+            {whatsappLink && (
+              <a
+                href={whatsappLink}
+                target="_blank"
+                rel="noreferrer"
+                className="btn-primary flex-1 justify-center"
+              >
+                <MessageCircle size={16} />
+                WhatsApp
+              </a>
+            )}
+          </div>
+          {!whatsappLink && (
+            <p className="text-xs text-ink-muted">
+              Cadastre o telefone deste inquilino para poder enviar por WhatsApp.
+            </p>
+          )}
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <p className="text-sm text-ink-secondary">
+            {alreadyHasLogin
+              ? `${tenant.nome} já tem login. Você pode redefinir a senha (o e-mail também pode ser atualizado).`
+              : `Crie o login que ${tenant.nome} vai usar para acompanhar o próprio contrato e recibos.`}
+          </p>
+          <Field label="E-mail de acesso">
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="input"
+            />
+          </Field>
+          <Field label="Senha">
             <div className="flex gap-2">
               <input
-                readOnly
-                value={url}
-                className="input flex-1 text-xs"
-                onFocus={(e) => e.target.select()}
+                required
+                minLength={6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="input flex-1"
               />
               <button
-                onClick={handleCopy}
+                type="button"
+                onClick={() => setPassword(generatePassword())}
                 className="btn-secondary px-3"
-                title="Copiar link"
-                aria-label="Copiar link do portal"
+                title="Gerar nova senha"
+                aria-label="Gerar nova senha"
               >
-                {copied ? <Check size={16} /> : <Copy size={16} />}
+                <RefreshCw size={16} />
               </button>
             </div>
-
-            {whatsappLink ? (
-              <a href={whatsappLink} target="_blank" rel="noreferrer" className="btn-primary w-full justify-center">
-                <MessageCircle size={16} />
-                Enviar por WhatsApp
-              </a>
-            ) : (
-              <p className="text-xs text-ink-muted">
-                Cadastre o telefone deste inquilino para poder enviar o link por WhatsApp.
-              </p>
-            )}
-
-            <button
-              onClick={handleRegenerate}
-              disabled={regenerating}
-              className="inline-flex items-center gap-1.5 text-sm text-ink-muted hover:text-status-critical transition"
-            >
-              <RefreshCw size={14} />
-              {regenerating ? "Gerando..." : "Gerar novo link (revoga o atual)"}
+          </Field>
+          {error && (
+            <p className="text-sm text-status-critical bg-status-critical/5 border border-status-critical/20 rounded-lg px-3 py-2">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose} className="btn-secondary">
+              Cancelar
             </button>
-          </>
-        ) : null}
-      </div>
+            <button type="submit" disabled={submitting} className="btn-primary">
+              {submitting ? "Salvando..." : alreadyHasLogin ? "Redefinir senha" : "Criar login"}
+            </button>
+          </div>
+        </form>
+      )}
     </Modal>
   );
 }

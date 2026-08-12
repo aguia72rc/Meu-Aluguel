@@ -136,26 +136,30 @@ create table if not exists calendar_feed_tokens (
 );
 
 -- ─────────────────────────────────────────────────────────────
--- Tokens do portal do inquilino (link único, sem senha, para o
--- inquilino ver seus contratos e baixar seus recibos) — servidos
--- pela Edge Function "tenant-portal"
+-- Contas de inquilino: vincula um login do Supabase Auth (e-mail +
+-- senha, criado pelo administrador na tela de Inquilinos, via a Edge
+-- Function "manage-tenant-login") a um inquilino. Um usuário
+-- autenticado presente aqui é um inquilino; qualquer outro login é um
+-- administrador — é essa distinção que as políticas de RLS abaixo usam.
 -- ─────────────────────────────────────────────────────────────
-create table if not exists tenant_portal_tokens (
+create table if not exists tenant_accounts (
   id uuid primary key default gen_random_uuid(),
-  owner_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
   tenant_id uuid not null unique references tenants(id) on delete cascade,
-  token text not null unique default encode(gen_random_bytes(24), 'hex'),
+  user_id uuid not null unique references auth.users(id) on delete cascade,
   created_at timestamptz not null default now()
 );
 
 -- ─────────────────────────────────────────────────────────────
--- Row Level Security — qualquer usuário autenticado (administrador)
--- vê e edita todos os dados. Não há isolamento por usuário: todo
--- login criado em Authentication > Users é um administrador com
--- acesso total, pensado para ser usado por poucas pessoas de
--- confiança (você e, por exemplo, seu cônjuge/sócio) compartilhando
--- a mesma gestão dos imóveis. `owner_id` fica só como registro de
--- quem cadastrou cada linha, sem efeito na permissão de acesso.
+-- Row Level Security
+--
+-- Administradores (qualquer login que NÃO esteja em tenant_accounts):
+-- acesso total a tudo, sem isolamento por usuário — pensado para poucas
+-- pessoas de confiança (você e, por exemplo, seu cônjuge/sócio)
+-- compartilhando a mesma gestão dos imóveis. `owner_id` fica só como
+-- registro de quem cadastrou cada linha, sem efeito na permissão.
+--
+-- Inquilinos (login vinculado em tenant_accounts): acesso somente
+-- leitura, restrito aos próprios contratos, pagamentos e recibos.
 -- ─────────────────────────────────────────────────────────────
 alter table properties enable row level security;
 alter table tenants enable row level security;
@@ -163,42 +167,111 @@ alter table contracts enable row level security;
 alter table payments enable row level security;
 alter table receipts enable row level security;
 alter table calendar_feed_tokens enable row level security;
-alter table tenant_portal_tokens enable row level security;
+alter table tenant_accounts enable row level security;
 
-create policy "properties_authenticated_all" on properties
-  for all to authenticated using (true) with check (true);
+create policy "tenant_accounts_admin_all" on tenant_accounts
+  for all to authenticated
+  using (not exists (select 1 from tenant_accounts ta where ta.user_id = auth.uid()))
+  with check (not exists (select 1 from tenant_accounts ta where ta.user_id = auth.uid()));
 
-create policy "tenants_authenticated_all" on tenants
-  for all to authenticated using (true) with check (true);
+create policy "tenant_accounts_select_self" on tenant_accounts
+  for select to authenticated using (user_id = auth.uid());
 
-create policy "contracts_authenticated_all" on contracts
-  for all to authenticated using (true) with check (true);
+create policy "properties_admin_all" on properties
+  for all to authenticated
+  using (not exists (select 1 from tenant_accounts where user_id = auth.uid()))
+  with check (not exists (select 1 from tenant_accounts where user_id = auth.uid()));
 
-create policy "payments_authenticated_all" on payments
-  for all to authenticated using (true) with check (true);
+create policy "properties_tenant_select" on properties
+  for select to authenticated
+  using (exists (
+    select 1 from contracts c
+    join tenant_accounts ta on ta.tenant_id = c.tenant_id
+    where c.property_id = properties.id and ta.user_id = auth.uid()
+  ));
 
-create policy "receipts_authenticated_all" on receipts
-  for all to authenticated using (true) with check (true);
+create policy "tenants_admin_all" on tenants
+  for all to authenticated
+  using (not exists (select 1 from tenant_accounts where user_id = auth.uid()))
+  with check (not exists (select 1 from tenant_accounts where user_id = auth.uid()));
 
-create policy "calendar_feed_tokens_authenticated_all" on calendar_feed_tokens
-  for all to authenticated using (true) with check (true);
+create policy "tenants_tenant_select_self" on tenants
+  for select to authenticated
+  using (exists (
+    select 1 from tenant_accounts ta where ta.tenant_id = tenants.id and ta.user_id = auth.uid()
+  ));
 
-create policy "tenant_portal_tokens_authenticated_all" on tenant_portal_tokens
-  for all to authenticated using (true) with check (true);
+create policy "contracts_admin_all" on contracts
+  for all to authenticated
+  using (not exists (select 1 from tenant_accounts where user_id = auth.uid()))
+  with check (not exists (select 1 from tenant_accounts where user_id = auth.uid()));
+
+create policy "contracts_tenant_select_self" on contracts
+  for select to authenticated
+  using (exists (
+    select 1 from tenant_accounts ta where ta.tenant_id = contracts.tenant_id and ta.user_id = auth.uid()
+  ));
+
+create policy "payments_admin_all" on payments
+  for all to authenticated
+  using (not exists (select 1 from tenant_accounts where user_id = auth.uid()))
+  with check (not exists (select 1 from tenant_accounts where user_id = auth.uid()));
+
+create policy "payments_tenant_select_self" on payments
+  for select to authenticated
+  using (exists (
+    select 1 from contracts c
+    join tenant_accounts ta on ta.tenant_id = c.tenant_id
+    where c.id = payments.contract_id and ta.user_id = auth.uid()
+  ));
+
+create policy "receipts_admin_all" on receipts
+  for all to authenticated
+  using (not exists (select 1 from tenant_accounts where user_id = auth.uid()))
+  with check (not exists (select 1 from tenant_accounts where user_id = auth.uid()));
+
+create policy "receipts_tenant_select_self" on receipts
+  for select to authenticated
+  using (exists (
+    select 1 from payments p
+    join contracts c on c.id = p.contract_id
+    join tenant_accounts ta on ta.tenant_id = c.tenant_id
+    where p.id = receipts.payment_id and ta.user_id = auth.uid()
+  ));
+
+create policy "calendar_feed_tokens_admin_all" on calendar_feed_tokens
+  for all to authenticated
+  using (not exists (select 1 from tenant_accounts where user_id = auth.uid()))
+  with check (not exists (select 1 from tenant_accounts where user_id = auth.uid()));
 
 -- ─────────────────────────────────────────────────────────────
--- Storage — bucket privado para os PDFs dos recibos, acessível a
--- qualquer administrador autenticado (mesma lógica acima)
+-- Storage — bucket privado para os PDFs dos recibos. Administradores
+-- têm acesso total; inquilinos só baixam (select) os próprios recibos.
 -- ─────────────────────────────────────────────────────────────
 insert into storage.buckets (id, name, public)
 values ('recibos', 'recibos', false)
 on conflict (id) do nothing;
 
-create policy "recibos_authenticated_select" on storage.objects
-  for select to authenticated using (bucket_id = 'recibos');
+create policy "recibos_admin_select" on storage.objects
+  for select to authenticated
+  using (bucket_id = 'recibos' and not exists (select 1 from tenant_accounts where user_id = auth.uid()));
 
-create policy "recibos_authenticated_insert" on storage.objects
-  for insert to authenticated with check (bucket_id = 'recibos');
+create policy "recibos_admin_insert" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'recibos' and not exists (select 1 from tenant_accounts where user_id = auth.uid()));
 
-create policy "recibos_authenticated_delete" on storage.objects
-  for delete to authenticated using (bucket_id = 'recibos');
+create policy "recibos_admin_delete" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'recibos' and not exists (select 1 from tenant_accounts where user_id = auth.uid()));
+
+create policy "recibos_tenant_select_own" on storage.objects
+  for select to authenticated
+  using (
+    bucket_id = 'recibos' and exists (
+      select 1 from receipts r
+      join payments p on p.id = r.payment_id
+      join contracts c on c.id = p.contract_id
+      join tenant_accounts ta on ta.tenant_id = c.tenant_id
+      where r.storage_path = storage.objects.name and ta.user_id = auth.uid()
+    )
+  );

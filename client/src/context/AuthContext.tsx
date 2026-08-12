@@ -5,6 +5,8 @@ import { supabase } from "../lib/supabase";
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
+  isTenant: boolean;
+  tenantId: string | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -18,19 +20,44 @@ function friendlyAuthError(message: string): string {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
+  const [tenantId, setTenantId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  async function resolveTenantId(user: User | null) {
+    if (!user) return null;
+    const { data } = await supabase
+      .from("tenant_accounts")
+      .select("tenant_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    return data?.tenant_id ?? null;
+  }
+
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    let cancelled = false;
+
+    supabase.auth.getSession().then(async ({ data }) => {
+      const tid = await resolveTenantId(data.session?.user ?? null);
+      if (cancelled) return;
       setSession(data.session);
+      setTenantId(tid);
       setLoading(false);
     });
 
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
+      setLoading(true);
+      resolveTenantId(newSession?.user ?? null).then((tid) => {
+        if (cancelled) return;
+        setSession(newSession);
+        setTenantId(tid);
+        setLoading(false);
+      });
     });
 
-    return () => subscription.subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      subscription.subscription.unsubscribe();
+    };
   }, []);
 
   async function login(email: string, password: string) {
@@ -38,7 +65,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw new Error(friendlyAuthError(error.message));
+      const tid = await resolveTenantId(data.session?.user ?? null);
       setSession(data.session);
+      setTenantId(tid);
     } finally {
       setLoading(false);
     }
@@ -47,10 +76,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function logout() {
     await supabase.auth.signOut();
     setSession(null);
+    setTenantId(null);
   }
 
   return (
-    <AuthContext.Provider value={{ user: session?.user ?? null, loading, login, logout }}>
+    <AuthContext.Provider
+      value={{
+        user: session?.user ?? null,
+        loading,
+        isTenant: tenantId !== null,
+        tenantId,
+        login,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
