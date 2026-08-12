@@ -38,101 +38,220 @@ const RODAPE: Record<PaymentType, string> = {
     "Este recibo confirma o pagamento integral da taxa de água e esgoto acima referente ao imóvel e período indicados.",
 };
 
+// Mesma paleta da interface (tailwind.config.js), para o PDF ficar
+// visualmente consistente com o resto do sistema.
+type RGB = [number, number, number];
+const PRIMARY: RGB = [28, 92, 171];
+const INK: RGB = [11, 11, 11];
+const INK_SECONDARY: RGB = [82, 81, 78];
+const INK_MUTED: RGB = [137, 135, 129];
+const SURFACE_PAGE: RGB = [249, 249, 247];
+const BORDER: RGB = [225, 224, 217];
+const WHITE: RGB = [255, 255, 255];
+
+const PAGE_WIDTH = 595.28;
+const PAGE_HEIGHT = 841.89;
+const MARGIN_X = 48;
+const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_X * 2;
+
 export function generateReceiptPdfBlob(data: ReceiptData): Blob {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const marginX = 50;
-  let y = 60;
 
-  doc.setFontSize(18);
-  doc.text(TITULO[data.tipo], 297.5, y, { align: "center" });
-  y += 20;
-  doc.setFontSize(10);
-  doc.setTextColor(85, 85, 85);
-  doc.text(`Recibo Nº ${data.numero}`, 297.5, y, { align: "center" });
-  doc.setTextColor(0, 0, 0);
-  y += 40;
+  drawHeader(doc, data);
+  let y = drawInfoSection(doc, 168);
+  y = drawPaymentTable(doc, data, y + 20);
+  drawFooter(doc, data, y + 30);
 
-  doc.setFontSize(11);
-  doc.text(`Emitido em: ${formatDate(data.dataEmissao)}`, marginX, y);
-  y += 16;
-  doc.text(`Referente ao mês: ${formatMonth(data.mesReferencia)}`, marginX, y);
-  y += 26;
+  return doc.output("blob");
 
-  doc.setFontSize(13);
-  doc.text("Locador(a)", marginX, y);
-  doc.setLineWidth(0.5);
-  doc.line(marginX, y + 2, marginX + 60, y + 2);
-  y += 18;
-  doc.setFontSize(11);
-  doc.text(data.proprietarioNome, marginX, y);
-  y += 26;
+  function drawInfoSection(d: jsPDF, startY: number): number {
+    const gap = 16;
+    const colWidth = (CONTENT_WIDTH - gap) / 2;
+    const rowHeight = 74;
 
-  doc.setFontSize(13);
-  doc.text("Locatário(a)", marginX, y);
-  doc.line(marginX, y + 2, marginX + 70, y + 2);
-  y += 18;
-  doc.setFontSize(11);
-  doc.text(data.tenantNome, marginX, y);
-  y += 16;
-  if (data.tenantCpf) {
-    doc.text(`CPF: ${data.tenantCpf}`, marginX, y);
-    y += 16;
+    drawBox(d, MARGIN_X, startY, colWidth, rowHeight);
+    drawLabel(d, "Locador(a)", MARGIN_X + 16, startY + 24);
+    drawValue(d, data.proprietarioNome, MARGIN_X + 16, startY + 46);
+
+    const col2X = MARGIN_X + colWidth + gap;
+    drawBox(d, col2X, startY, colWidth, rowHeight);
+    drawLabel(d, "Locatário(a)", col2X + 16, startY + 24);
+    drawValue(d, data.tenantNome, col2X + 16, startY + 46);
+    if (data.tenantCpf) {
+      drawValue(d, `CPF ${data.tenantCpf}`, col2X + 16, startY + 61, { muted: true, size: 9.5 });
+    }
+
+    const propertyY = startY + rowHeight + 14;
+    drawBox(d, MARGIN_X, propertyY, CONTENT_WIDTH, rowHeight);
+    drawLabel(d, "Imóvel", MARGIN_X + 16, propertyY + 24);
+    drawValue(d, data.propertyNome, MARGIN_X + 16, propertyY + 46);
+    drawValue(d, data.propertyEndereco, MARGIN_X + 16, propertyY + 61, { muted: true, size: 9.5 });
+
+    return propertyY + rowHeight;
   }
-  y += 10;
+}
 
-  doc.setFontSize(13);
-  doc.text("Imóvel", marginX, y);
-  doc.line(marginX, y + 2, marginX + 40, y + 2);
-  y += 18;
-  doc.setFontSize(11);
-  doc.text(data.propertyNome, marginX, y);
-  y += 16;
-  doc.text(data.propertyEndereco, marginX, y);
-  y += 30;
+function drawHeader(doc: jsPDF, data: ReceiptData) {
+  const headerHeight = 118;
+  doc.setFillColor(...PRIMARY);
+  doc.rect(0, 0, PAGE_WIDTH, headerHeight, "F");
 
-  doc.setFontSize(13);
-  doc.text("Detalhamento do pagamento", marginX, y);
-  doc.line(marginX, y + 2, marginX + 175, y + 2);
-  y += 24;
+  doc.setFillColor(...WHITE);
+  doc.roundedRect(MARGIN_X, 34, 42, 42, 9, 9, "F");
+  doc.setTextColor(...PRIMARY);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("MA", MARGIN_X + 21, 34 + 27, { align: "center" });
+
+  doc.setTextColor(...WHITE);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("Meu Aluguel", MARGIN_X + 56, 34 + 18);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  doc.text("Gestão de imóveis, pagamentos e recibos", MARGIN_X + 56, 34 + 33);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12.5);
+  doc.text(TITULO[data.tipo].toUpperCase(), PAGE_WIDTH - MARGIN_X, 34 + 16, { align: "right" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text(`Recibo Nº ${data.numero}`, PAGE_WIDTH - MARGIN_X, 34 + 34, { align: "right" });
+  doc.setFontSize(9);
+  doc.text(
+    `Emitido em ${formatDate(data.dataEmissao)} · Ref. ${formatMonth(data.mesReferencia)}`,
+    PAGE_WIDTH - MARGIN_X,
+    34 + 50,
+    { align: "right" }
+  );
+}
+
+function drawPaymentTable(doc: jsPDF, data: ReceiptData, startY: number): number {
+  let y = startY;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...PRIMARY);
+  doc.text("DETALHAMENTO DO PAGAMENTO", MARGIN_X, y);
+  y += 14;
 
   const rows: [string, string][] = [[ITEM_LABEL[data.tipo], formatCurrency(data.valor)]];
   if (data.valorOutros > 0) {
     rows.push([data.descricaoOutros || "Outros", formatCurrency(data.valorOutros)]);
   }
 
-  doc.setFontSize(11);
-  for (const [label, value] of rows) {
-    doc.text(label, marginX + 10, y);
-    doc.text(value, 500, y, { align: "right" });
-    y += 20;
-  }
+  const rowHeight = 28;
+  const boxHeight = rows.length * rowHeight + 16;
+  const boxTop = y;
 
-  doc.setDrawColor(136, 136, 136);
-  doc.line(marginX + 10, y + 4, 500, y + 4);
-  y += 16;
+  doc.setDrawColor(...BORDER);
+  doc.setLineWidth(0.75);
+  doc.setFillColor(...WHITE);
+  doc.rect(MARGIN_X, boxTop, CONTENT_WIDTH, boxHeight, "FD");
 
+  rows.forEach(([label, value], i) => {
+    const rowY = boxTop + 20 + i * rowHeight;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+    doc.setTextColor(...INK_SECONDARY);
+    doc.text(label, MARGIN_X + 16, rowY);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...INK);
+    doc.text(value, PAGE_WIDTH - MARGIN_X - 16, rowY, { align: "right" });
+    if (i < rows.length - 1) {
+      doc.setDrawColor(...BORDER);
+      doc.setLineWidth(0.5);
+      doc.line(MARGIN_X + 16, rowY + rowHeight / 2 + 2, PAGE_WIDTH - MARGIN_X - 16, rowY + rowHeight / 2 + 2);
+    }
+  });
+
+  y = boxTop + boxHeight + 12;
+
+  const totalHeight = 42;
+  doc.setFillColor(...PRIMARY);
+  doc.roundedRect(MARGIN_X, y, CONTENT_WIDTH, totalHeight, 6, 6, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
-  doc.text("Total pago", marginX + 10, y);
-  doc.text(formatCurrency(data.valorTotal), 500, y, { align: "right" });
+  doc.setTextColor(...WHITE);
+  doc.text("TOTAL PAGO", MARGIN_X + 18, y + totalHeight / 2 + 4);
+  doc.setFontSize(15);
+  doc.text(formatCurrency(data.valorTotal), PAGE_WIDTH - MARGIN_X - 18, y + totalHeight / 2 + 5, {
+    align: "right",
+  });
+
+  return y + totalHeight;
+}
+
+function drawFooter(doc: jsPDF, data: ReceiptData, startY: number) {
+  let y = startY;
+
   doc.setFont("helvetica", "normal");
-  y += 30;
+  doc.setFontSize(9.5);
+  doc.setTextColor(...INK_MUTED);
+  const metaParts = [
+    `Vencimento: ${formatDate(data.dataVencimento)}`,
+    `Pagamento: ${formatDate(data.dataPagamento)}`,
+  ];
+  if (data.formaPagamento) metaParts.push(`Forma: ${data.formaPagamento}`);
+  doc.text(metaParts.join("   ·   "), MARGIN_X, y);
+  y += 28;
 
-  doc.setFontSize(11);
-  doc.text(`Data do vencimento: ${formatDate(data.dataVencimento)}`, marginX + 10, y);
-  y += 18;
-  doc.text(`Data do pagamento: ${formatDate(data.dataPagamento)}`, marginX + 10, y);
-  y += 18;
-  if (data.formaPagamento) {
-    doc.text(`Forma de pagamento: ${data.formaPagamento}`, marginX + 10, y);
-    y += 18;
-  }
+  doc.setFontSize(9.5);
+  doc.setTextColor(...INK_SECONDARY);
+  const footerLines = doc.splitTextToSize(RODAPE[data.tipo], CONTENT_WIDTH);
+  doc.text(footerLines, MARGIN_X, y);
+  y += footerLines.length * 13 + 44;
 
-  y += 26;
-  doc.setFontSize(10);
-  doc.setTextColor(85, 85, 85);
-  const footer = doc.splitTextToSize(RODAPE[data.tipo], 440);
-  doc.text(footer, marginX + 10, y);
+  const sigWidth = 220;
+  const sigX = (PAGE_WIDTH - sigWidth) / 2;
+  doc.setDrawColor(...INK_MUTED);
+  doc.setLineWidth(0.75);
+  doc.line(sigX, y, sigX + sigWidth, y);
+  y += 16;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10.5);
+  doc.setTextColor(...INK);
+  doc.text(data.proprietarioNome, PAGE_WIDTH / 2, y, { align: "center" });
+  y += 13;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...INK_MUTED);
+  doc.text("Locador(a)", PAGE_WIDTH / 2, y, { align: "center" });
 
-  return doc.output("blob");
+  const barY = PAGE_HEIGHT - 50;
+  doc.setDrawColor(...BORDER);
+  doc.setLineWidth(0.75);
+  doc.line(MARGIN_X, barY, PAGE_WIDTH - MARGIN_X, barY);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(...INK_MUTED);
+  doc.text("Meu Aluguel · Recibo gerado eletronicamente", MARGIN_X, barY + 16);
+  doc.text(`Nº ${data.numero}`, PAGE_WIDTH - MARGIN_X, barY + 16, { align: "right" });
+}
+
+function drawBox(doc: jsPDF, x: number, y: number, w: number, h: number) {
+  doc.setFillColor(...SURFACE_PAGE);
+  doc.setDrawColor(...BORDER);
+  doc.setLineWidth(0.75);
+  doc.roundedRect(x, y, w, h, 6, 6, "FD");
+}
+
+function drawLabel(doc: jsPDF, text: string, x: number, y: number) {
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...PRIMARY);
+  doc.text(text.toUpperCase(), x, y);
+}
+
+function drawValue(
+  doc: jsPDF,
+  text: string,
+  x: number,
+  y: number,
+  opts?: { muted?: boolean; size?: number }
+) {
+  doc.setFont("helvetica", opts?.muted ? "normal" : "bold");
+  doc.setFontSize(opts?.size ?? 11.5);
+  doc.setTextColor(...(opts?.muted ? INK_SECONDARY : INK));
+  doc.text(text, x, y);
 }
