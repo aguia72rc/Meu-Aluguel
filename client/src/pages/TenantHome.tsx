@@ -10,14 +10,17 @@ import {
   LogOut,
   Receipt as ReceiptIcon,
 } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import EmptyState from "../components/EmptyState";
 import Modal from "../components/Modal";
+import StatusBadge from "../components/StatusBadge";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { errorMessage } from "../lib/errors";
 import { downloadReceiptFile } from "../lib/receipts";
 import { supabase } from "../lib/supabase";
+import type { PaymentType } from "../types";
 import { formatCurrency, formatDate, formatMonth } from "../utils/format";
 
 interface ContractRow {
@@ -30,12 +33,15 @@ interface ContractRow {
 
 interface PaymentRow {
   id: string;
-  tipo: "aluguel" | "agua_esgoto";
+  tipo: PaymentType;
   mes_referencia: string;
   valor_total: number;
   data_pagamento: string | null;
   contract_id: string;
-  receipts: { numero: string; data_emissao: string; storage_path: string } | { numero: string; data_emissao: string; storage_path: string }[] | null;
+  receipts:
+    | { numero: string; data_emissao: string; storage_path: string }
+    | { numero: string; data_emissao: string; storage_path: string }[]
+    | null;
 }
 
 interface ContractView {
@@ -50,7 +56,7 @@ interface ContractView {
 
 interface ReceiptView {
   id: string;
-  tipo: "aluguel" | "agua_esgoto";
+  tipo: PaymentType;
   mes_referencia: string;
   valor_total: number;
   numero: string;
@@ -59,12 +65,10 @@ interface ReceiptView {
   property_nome: string;
 }
 
-const TIPO_LABEL: Record<ReceiptView["tipo"], string> = {
-  aluguel: "Aluguel",
-  agua_esgoto: "Água e Esgoto",
-};
-
-const TIPO_ICON = { aluguel: Home, agua_esgoto: Droplets } as const;
+const TABS: { tipo: PaymentType; label: string; icon: typeof Home }[] = [
+  { tipo: "aluguel", label: "Aluguel", icon: Home },
+  { tipo: "agua_esgoto", label: "Água e Esgoto", icon: Droplets },
+];
 
 function diasRestantes(dataFim: string | null): number | null {
   if (!dataFim) return null;
@@ -88,6 +92,7 @@ export default function TenantHome() {
   const [error, setError] = useState("");
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [tipoTab, setTipoTab] = useState<PaymentType>("aluguel");
 
   useEffect(() => {
     if (!tenantId) return;
@@ -131,7 +136,9 @@ export default function TenantHome() {
       if (contractIds.length > 0) {
         const { data: paymentRows, error: paymentsError } = await supabase
           .from("payments")
-          .select("id, tipo, mes_referencia, valor_total, data_pagamento, contract_id, receipts(numero, data_emissao, storage_path)")
+          .select(
+            "id, tipo, mes_referencia, valor_total, data_pagamento, contract_id, receipts(numero, data_emissao, storage_path)"
+          )
           .in("contract_id", contractIds)
           .eq("status", "pago")
           .order("data_pagamento", { ascending: false });
@@ -180,32 +187,42 @@ export default function TenantHome() {
     navigate("/login");
   }
 
+  const activeContract = useMemo(() => contracts.find((c) => c.status === "ativo") ?? null, [contracts]);
+  const filteredReceipts = useMemo(() => receipts.filter((r) => r.tipo === tipoTab), [receipts, tipoTab]);
+  const primeiroNome = tenantNome.split(" ")[0];
+
   return (
     <div className="min-h-screen bg-surface-page">
-      <div className="max-w-2xl mx-auto px-4 py-10 space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-ink">Meu Aluguel</h1>
-            <p className="text-sm text-ink-muted">Área do inquilino</p>
+      <header className="bg-white border-b border-surface-border">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-lg bg-primary-500 text-white flex items-center justify-center font-bold text-sm">
+              MA
+            </div>
+            <span className="font-semibold text-ink">Meu Aluguel</span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1">
             <button
               onClick={() => setPasswordModalOpen(true)}
-              className="flex items-center gap-1.5 text-sm text-ink-muted hover:text-ink transition"
+              className="p-2 text-ink-muted hover:text-ink hover:bg-surface-page rounded-lg transition"
+              aria-label="Trocar senha"
+              title="Trocar senha"
             >
-              <KeyRound size={15} />
-              Trocar senha
+              <KeyRound size={17} />
             </button>
             <button
               onClick={handleLogout}
-              className="flex items-center gap-1.5 text-sm text-ink-muted hover:text-status-critical transition"
+              className="p-2 text-ink-muted hover:text-status-critical hover:bg-status-critical/10 rounded-lg transition"
+              aria-label="Sair"
+              title="Sair"
             >
-              <LogOut size={15} />
-              Sair
+              <LogOut size={17} />
             </button>
           </div>
         </div>
+      </header>
 
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 space-y-8">
         {loading ? (
           <div className="flex justify-center py-16">
             <Loader2 className="animate-spin text-ink-muted" size={28} />
@@ -217,49 +234,124 @@ export default function TenantHome() {
           </div>
         ) : (
           <>
-            <p className="text-lg font-semibold text-ink">Olá, {tenantNome.split(" ")[0]}!</p>
+            <div className="relative overflow-hidden rounded-2xl bg-primary-700 text-white px-6 py-7 sm:px-8 sm:py-8">
+              <div
+                aria-hidden
+                className="absolute -top-20 -right-16 h-64 w-64 rounded-full bg-white/10 blur-3xl"
+              />
+              <div
+                aria-hidden
+                className="absolute -bottom-24 -left-10 h-56 w-56 rounded-full bg-primary-900/30 blur-3xl"
+              />
+              <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+                <div>
+                  <p className="text-primary-100 text-sm">Bem-vindo(a) de volta</p>
+                  <h1 className="text-2xl sm:text-3xl font-bold mt-1">Olá, {primeiroNome}!</h1>
+                  {activeContract && (
+                    <p className="text-primary-100 text-sm mt-2">{activeContract.property_nome}</p>
+                  )}
+                </div>
+                {activeContract && activeContract.dias_restantes !== null && (
+                  <div className="bg-white/10 rounded-xl px-6 py-4 text-center shrink-0">
+                    <p className="text-3xl font-bold tabular-nums">
+                      {Math.abs(activeContract.dias_restantes)}
+                    </p>
+                    <p className="text-xs text-primary-100 mt-1 max-w-[9rem]">
+                      {activeContract.dias_restantes < 0
+                        ? "dias em atraso — aguardando renovação"
+                        : "dias até o fim do contrato"}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
 
             <div className="space-y-3">
-              {contracts.map((c) => (
-                <ContractCard key={c.id} contract={c} />
-              ))}
+              <h2 className="text-sm font-semibold text-ink-secondary">
+                {contracts.length > 1 ? "Meus contratos" : "Meu contrato"}
+              </h2>
+              {contracts.length === 0 ? (
+                <div className="card">
+                  <EmptyState
+                    icon={Building2}
+                    title="Nenhum contrato vinculado"
+                    description="Fale com o administrador se isso não parecer certo."
+                  />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {contracts.map((c) => (
+                    <ContractCard key={c.id} contract={c} />
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="card overflow-hidden">
-              <div className="px-5 py-3.5 border-b border-surface-border flex items-center gap-2">
+              <div className="px-5 py-4 flex items-center gap-2">
                 <ReceiptIcon size={16} className="text-primary-600" />
                 <h2 className="text-sm font-semibold text-ink">Recibos</h2>
               </div>
-              {receipts.length === 0 ? (
-                <p className="p-5 text-sm text-ink-muted">Nenhum recibo emitido ainda.</p>
+
+              <div className="flex gap-1 px-5 border-b border-surface-border">
+                {TABS.map((tab) => {
+                  const count = receipts.filter((r) => r.tipo === tab.tipo).length;
+                  return (
+                    <button
+                      key={tab.tipo}
+                      onClick={() => setTipoTab(tab.tipo)}
+                      className={`flex items-center gap-2 px-3 py-2.5 text-sm font-medium border-b-2 -mb-px transition ${
+                        tipoTab === tab.tipo
+                          ? "border-primary-500 text-primary-700"
+                          : "border-transparent text-ink-secondary hover:text-ink"
+                      }`}
+                    >
+                      <tab.icon size={15} />
+                      {tab.label}
+                      {count > 0 && (
+                        <span className="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-surface-page text-xs text-ink-muted">
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {filteredReceipts.length === 0 ? (
+                <EmptyState
+                  icon={ReceiptIcon}
+                  title="Nenhum recibo por aqui ainda"
+                  description="Assim que um pagamento for confirmado, o recibo aparece nesta lista."
+                />
               ) : (
                 <div className="divide-y divide-surface-border/60">
-                  {receipts.map((r) => {
-                    const Icon = TIPO_ICON[r.tipo];
-                    return (
-                      <button
-                        key={r.id}
-                        onClick={() => handleDownload(r)}
-                        disabled={downloadingId === r.id}
-                        className="w-full flex items-center justify-between gap-3 px-5 py-3.5 hover:bg-surface-page/60 transition disabled:opacity-50 text-left"
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="h-9 w-9 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center shrink-0">
-                            <Icon size={16} />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-ink truncate">
-                              {TIPO_LABEL[r.tipo]} · {formatMonth(r.mes_referencia)}
-                            </p>
-                            <p className="text-xs text-ink-muted truncate">
-                              {r.property_nome} · {formatCurrency(r.valor_total)}
-                            </p>
-                          </div>
+                  {filteredReceipts.map((r) => (
+                    <button
+                      key={r.id}
+                      onClick={() => handleDownload(r)}
+                      disabled={downloadingId === r.id}
+                      className="w-full flex items-center justify-between gap-3 px-5 py-3.5 hover:bg-surface-page/60 transition disabled:opacity-50 text-left"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="h-9 w-9 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center shrink-0">
+                          <ReceiptIcon size={16} />
                         </div>
-                        <Download size={16} className="text-ink-muted shrink-0" />
-                      </button>
-                    );
-                  })}
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-ink truncate">
+                            {formatMonth(r.mes_referencia)}
+                          </p>
+                          <p className="text-xs text-ink-muted truncate">
+                            {r.property_nome} · {formatCurrency(r.valor_total)}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="flex items-center gap-1.5 text-xs font-medium text-primary-600 shrink-0">
+                        <Download size={14} />
+                        Baixar
+                      </span>
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
@@ -357,14 +449,17 @@ function ContractCard({ contract }: { contract: ContractView }) {
 
   return (
     <div className="card p-5 space-y-3">
-      <div className="flex items-start gap-3">
-        <div className="h-10 w-10 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center shrink-0">
-          <Building2 size={18} />
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3 min-w-0">
+          <div className="h-10 w-10 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center shrink-0">
+            <Building2 size={18} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-ink truncate">{contract.property_nome}</p>
+            <p className="text-xs text-ink-muted truncate">{contract.property_endereco}</p>
+          </div>
         </div>
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-ink truncate">{contract.property_nome}</p>
-          <p className="text-xs text-ink-muted truncate">{contract.property_endereco}</p>
-        </div>
+        <StatusBadge status={contract.status} />
       </div>
 
       <div className="flex items-center justify-between text-sm">
