@@ -169,80 +169,95 @@ alter table receipts enable row level security;
 alter table calendar_feed_tokens enable row level security;
 alter table tenant_accounts enable row level security;
 
+-- Funções auxiliares SECURITY DEFINER: ignoram RLS internamente ao
+-- consultar tenant_accounts, evitando que uma policy sobre a própria
+-- tenant_accounts (ou sobre qualquer outra tabela que a consulte) vire
+-- uma recursão infinita.
+create or replace function is_tenant_account()
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (select 1 from tenant_accounts where user_id = auth.uid());
+$$;
+
+create or replace function current_tenant_id()
+returns uuid
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select tenant_id from tenant_accounts where user_id = auth.uid();
+$$;
+
 create policy "tenant_accounts_admin_all" on tenant_accounts
   for all to authenticated
-  using (not exists (select 1 from tenant_accounts ta where ta.user_id = auth.uid()))
-  with check (not exists (select 1 from tenant_accounts ta where ta.user_id = auth.uid()));
+  using (not is_tenant_account())
+  with check (not is_tenant_account());
 
 create policy "tenant_accounts_select_self" on tenant_accounts
   for select to authenticated using (user_id = auth.uid());
 
 create policy "properties_admin_all" on properties
   for all to authenticated
-  using (not exists (select 1 from tenant_accounts where user_id = auth.uid()))
-  with check (not exists (select 1 from tenant_accounts where user_id = auth.uid()));
+  using (not is_tenant_account())
+  with check (not is_tenant_account());
 
 create policy "properties_tenant_select" on properties
   for select to authenticated
   using (exists (
-    select 1 from contracts c
-    join tenant_accounts ta on ta.tenant_id = c.tenant_id
-    where c.property_id = properties.id and ta.user_id = auth.uid()
+    select 1 from contracts c where c.property_id = properties.id and c.tenant_id = current_tenant_id()
   ));
 
 create policy "tenants_admin_all" on tenants
   for all to authenticated
-  using (not exists (select 1 from tenant_accounts where user_id = auth.uid()))
-  with check (not exists (select 1 from tenant_accounts where user_id = auth.uid()));
+  using (not is_tenant_account())
+  with check (not is_tenant_account());
 
 create policy "tenants_tenant_select_self" on tenants
   for select to authenticated
-  using (exists (
-    select 1 from tenant_accounts ta where ta.tenant_id = tenants.id and ta.user_id = auth.uid()
-  ));
+  using (id = current_tenant_id());
 
 create policy "contracts_admin_all" on contracts
   for all to authenticated
-  using (not exists (select 1 from tenant_accounts where user_id = auth.uid()))
-  with check (not exists (select 1 from tenant_accounts where user_id = auth.uid()));
+  using (not is_tenant_account())
+  with check (not is_tenant_account());
 
 create policy "contracts_tenant_select_self" on contracts
   for select to authenticated
-  using (exists (
-    select 1 from tenant_accounts ta where ta.tenant_id = contracts.tenant_id and ta.user_id = auth.uid()
-  ));
+  using (tenant_id = current_tenant_id());
 
 create policy "payments_admin_all" on payments
   for all to authenticated
-  using (not exists (select 1 from tenant_accounts where user_id = auth.uid()))
-  with check (not exists (select 1 from tenant_accounts where user_id = auth.uid()));
+  using (not is_tenant_account())
+  with check (not is_tenant_account());
 
 create policy "payments_tenant_select_self" on payments
   for select to authenticated
   using (exists (
-    select 1 from contracts c
-    join tenant_accounts ta on ta.tenant_id = c.tenant_id
-    where c.id = payments.contract_id and ta.user_id = auth.uid()
+    select 1 from contracts c where c.id = payments.contract_id and c.tenant_id = current_tenant_id()
   ));
 
 create policy "receipts_admin_all" on receipts
   for all to authenticated
-  using (not exists (select 1 from tenant_accounts where user_id = auth.uid()))
-  with check (not exists (select 1 from tenant_accounts where user_id = auth.uid()));
+  using (not is_tenant_account())
+  with check (not is_tenant_account());
 
 create policy "receipts_tenant_select_self" on receipts
   for select to authenticated
   using (exists (
     select 1 from payments p
     join contracts c on c.id = p.contract_id
-    join tenant_accounts ta on ta.tenant_id = c.tenant_id
-    where p.id = receipts.payment_id and ta.user_id = auth.uid()
+    where p.id = receipts.payment_id and c.tenant_id = current_tenant_id()
   ));
 
 create policy "calendar_feed_tokens_admin_all" on calendar_feed_tokens
   for all to authenticated
-  using (not exists (select 1 from tenant_accounts where user_id = auth.uid()))
-  with check (not exists (select 1 from tenant_accounts where user_id = auth.uid()));
+  using (not is_tenant_account())
+  with check (not is_tenant_account());
 
 -- ─────────────────────────────────────────────────────────────
 -- Storage — bucket privado para os PDFs dos recibos. Administradores
@@ -254,15 +269,15 @@ on conflict (id) do nothing;
 
 create policy "recibos_admin_select" on storage.objects
   for select to authenticated
-  using (bucket_id = 'recibos' and not exists (select 1 from tenant_accounts where user_id = auth.uid()));
+  using (bucket_id = 'recibos' and not is_tenant_account());
 
 create policy "recibos_admin_insert" on storage.objects
   for insert to authenticated
-  with check (bucket_id = 'recibos' and not exists (select 1 from tenant_accounts where user_id = auth.uid()));
+  with check (bucket_id = 'recibos' and not is_tenant_account());
 
 create policy "recibos_admin_delete" on storage.objects
   for delete to authenticated
-  using (bucket_id = 'recibos' and not exists (select 1 from tenant_accounts where user_id = auth.uid()));
+  using (bucket_id = 'recibos' and not is_tenant_account());
 
 create policy "recibos_tenant_select_own" on storage.objects
   for select to authenticated
@@ -271,7 +286,6 @@ create policy "recibos_tenant_select_own" on storage.objects
       select 1 from receipts r
       join payments p on p.id = r.payment_id
       join contracts c on c.id = p.contract_id
-      join tenant_accounts ta on ta.tenant_id = c.tenant_id
-      where r.storage_path = storage.objects.name and ta.user_id = auth.uid()
+      where r.storage_path = storage.objects.name and c.tenant_id = current_tenant_id()
     )
   );

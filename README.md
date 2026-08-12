@@ -94,7 +94,7 @@ Para poder criar o login (e-mail + senha) de cada inquilino pela tela de Inquili
 2. Nome da função: `manage-tenant-login`.
 3. Cole o conteúdo de [`supabase/functions/manage-tenant-login/index.ts`](supabase/functions/manage-tenant-login/index.ts) no editor e clique em **Deploy**.
 4. **Deixe "Enforce JWT Verification" LIGADO** (é o padrão) — ao contrário da `calendar-feed`, essa função só pode ser chamada por um administrador com sessão ativa; a própria função também confere isso por segurança.
-5. Rode [`supabase/migrations/006_tenant_login.sql`](supabase/migrations/006_tenant_login.sql) no SQL Editor (cria a tabela que vincula o login de cada inquilino e ajusta o RLS para que inquilinos só vejam os próprios dados).
+5. Rode [`supabase/migrations/006_tenant_login.sql`](supabase/migrations/006_tenant_login.sql) e, em seguida, [`supabase/migrations/007_fix_tenant_rls_recursion.sql`](supabase/migrations/007_fix_tenant_rls_recursion.sql) no SQL Editor. Juntas, elas criam a tabela que vincula o login de cada inquilino e ajustam o RLS para que inquilinos só vejam os próprios dados. **A 007 é obrigatória** — corrige um bug de recursão infinita na 006 que fazia o sistema inteiro parecer vazio para os administradores (nenhum dado é apagado, é só a política de segurança que precisa ser corrigida).
 
 Depois disso, na tela de **Inquilinos**, clique no ícone de chave ao lado do inquilino para criar o login dele (e-mail + senha, com opção de gerar uma senha aleatória) e enviar os dados de acesso por WhatsApp (ou copiar e mandar por outro meio). O inquilino entra pelo mesmo formulário de login do sistema — depois de logado, cai direto na área dele, sem acesso ao painel de administração.
 
