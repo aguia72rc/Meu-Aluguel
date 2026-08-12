@@ -11,8 +11,7 @@
 -- desfeita aqui — ninguém chegou a receber aquele link, então não há
 -- nada para migrar.
 
-drop policy if exists "tenant_portal_tokens_authenticated_all" on tenant_portal_tokens;
-drop table if exists tenant_portal_tokens;
+drop table if exists tenant_portal_tokens cascade;
 
 -- ─────────────────────────────────────────────────────────────
 -- Vincula um login do Supabase Auth a um inquilino
