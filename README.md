@@ -13,6 +13,7 @@ Sistema web para gestão de imóveis alugados: cadastro de imóveis e inquilinos
 - **Recibos**: ao marcar um pagamento como pago, um recibo em PDF específico daquele tipo (Aluguel ou Água e Esgoto) é gerado no navegador e enviado para o Supabase Storage, disponível para download a qualquer momento na tela de Recibos.
 - **Painel**: resumo do mês (recebido, pendente, atrasado), gráfico de receita dos últimos 6 meses e próximos vencimentos.
 - **Calendário (iPhone / Google Calendar / Outlook)**: link único de assinatura, gerado na tela de Perfil, com vencimentos pendentes, atrasos e lembretes de renovação de contrato — atualiza sozinho, sem precisar exportar nada de novo.
+- **Envio por WhatsApp**: nas telas de Pagamentos e Recibos, um botão abre o WhatsApp já com a mensagem pronta para o inquilino — lembrete de vencimento/atraso ou o link do recibo em PDF (válido por 7 dias). Usa o telefone cadastrado do inquilino; é um clique manual, não é envio automático (não precisa de conta ou aprovação da Meta).
 - Login via Supabase Auth (e-mail e senha).
 
 ## 1. Criar o projeto no Supabase
@@ -91,6 +92,7 @@ Depois disso, na tela de **Perfil** do sistema, clique em "Gerar link do calend�
 3. Crie um **contrato** vinculando imóvel e inquilino (os valores são copiados do imóvel, mas podem ser ajustados).
 4. Todo mês, na tela de **Pagamentos**, clique em "Gerar cobranças" para criar os lançamentos de aluguel e de água/esgoto de todos os contratos ativos — cada um aparece na sua própria aba.
 5. Quando o inquilino pagar (o aluguel e a água/esgoto podem ser pagos em datas diferentes), clique em "Marcar como pago" — o recibo em PDF daquele tipo é gerado automaticamente e fica disponível na tela de **Recibos**.
+6. Para cobrar ou avisar o inquilino, clique no ícone do WhatsApp (na tela de Pagamentos ou de Recibos) — ele abre o WhatsApp com a mensagem pronta, só falta enviar. Requer o telefone do inquilino cadastrado.
 
 ## Estrutura do projeto
 

@@ -1,10 +1,11 @@
-import { Download, Droplets, Home, Receipt as ReceiptIcon, Search } from "lucide-react";
+import { Download, Droplets, Home, MessageCircle, Receipt as ReceiptIcon, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import EmptyState from "../components/EmptyState";
 import { useToast } from "../context/ToastContext";
 import { errorMessage } from "../lib/errors";
-import { downloadReceiptFile } from "../lib/receipts";
+import { createReceiptShareLink, downloadReceiptFile } from "../lib/receipts";
 import { supabase } from "../lib/supabase";
+import { buildWhatsAppLink, receiptMessage } from "../lib/whatsapp";
 import type { PaymentType, Receipt } from "../types";
 import { formatCurrency, formatDate, formatMonth } from "../utils/format";
 
@@ -20,7 +21,7 @@ interface ReceiptRow {
     valor_total: number;
     contracts: {
       properties: { nome: string } | null;
-      tenants: { nome: string } | null;
+      tenants: { nome: string; telefone: string | null } | null;
     } | null;
   } | null;
 }
@@ -47,6 +48,7 @@ function flattenReceipt(row: ReceiptRow): Receipt {
     valor_total: row.payments?.valor_total ?? 0,
     property_nome: row.payments?.contracts?.properties?.nome ?? "",
     tenant_nome: row.payments?.contracts?.tenants?.nome ?? "",
+    tenant_telefone: row.payments?.contracts?.tenants?.telefone ?? null,
   };
 }
 
@@ -55,6 +57,7 @@ export default function Receipts() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [sendingId, setSendingId] = useState<string | null>(null);
   const toast = useToast();
 
   async function load() {
@@ -62,7 +65,7 @@ export default function Receipts() {
     const { data, error } = await supabase
       .from("receipts")
       .select(
-        "*, payments(tipo, mes_referencia, valor_total, contracts(properties(nome), tenants(nome)))"
+        "*, payments(tipo, mes_referencia, valor_total, contracts(properties(nome), tenants(nome, telefone)))"
       )
       .order("data_emissao", { ascending: false });
     if (error) toast.error(errorMessage(error, "Não foi possível carregar os recibos"));
@@ -98,6 +101,30 @@ export default function Receipts() {
       toast.error(errorMessage(err, "Não foi possível baixar o recibo"));
     } finally {
       setDownloadingId(null);
+    }
+  }
+
+  async function handleSendWhatsApp(receipt: Receipt) {
+    setSendingId(receipt.id);
+    try {
+      const receiptUrl = await createReceiptShareLink(receipt.storage_path);
+      const message = receiptMessage({
+        tenantNome: receipt.tenant_nome,
+        propertyNome: receipt.property_nome,
+        tipo: receipt.tipo,
+        mesReferencia: receipt.mes_referencia,
+        receiptUrl,
+      });
+      const link = buildWhatsAppLink(receipt.tenant_telefone, message);
+      if (!link) {
+        toast.error("Inquilino sem telefone cadastrado (ou número inválido).");
+        return;
+      }
+      window.open(link, "_blank");
+    } catch (err) {
+      toast.error(errorMessage(err, "Não foi possível enviar o recibo"));
+    } finally {
+      setSendingId(null);
     }
   }
 
@@ -182,14 +209,24 @@ export default function Receipts() {
                         {formatCurrency(r.valor_total)}
                       </td>
                       <td className="px-5 py-3">
-                        <button
-                          onClick={() => handleDownload(r)}
-                          disabled={downloadingId === r.id}
-                          className="inline-flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 disabled:opacity-50 transition"
-                        >
-                          <Download size={14} />
-                          Baixar
-                        </button>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => handleDownload(r)}
+                            disabled={downloadingId === r.id}
+                            className="inline-flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 disabled:opacity-50 transition"
+                          >
+                            <Download size={14} />
+                            Baixar
+                          </button>
+                          <button
+                            onClick={() => handleSendWhatsApp(r)}
+                            disabled={sendingId === r.id}
+                            className="inline-flex items-center gap-1.5 text-sm font-medium text-status-good hover:brightness-90 disabled:opacity-50 transition"
+                          >
+                            <MessageCircle size={14} />
+                            WhatsApp
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

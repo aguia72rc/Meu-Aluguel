@@ -1,4 +1,4 @@
-import { Banknote, Download, Droplets, Pencil, Receipt, RotateCcw, Trash2, Wallet } from "lucide-react";
+import { Banknote, Download, Droplets, MessageCircle, Pencil, Receipt, RotateCcw, Trash2, Wallet } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import EmptyState from "../components/EmptyState";
 import Field from "../components/Field";
@@ -7,8 +7,9 @@ import StatusBadge from "../components/StatusBadge";
 import { useConfirm } from "../context/ConfirmContext";
 import { useToast } from "../context/ToastContext";
 import { errorMessage } from "../lib/errors";
-import { downloadReceiptFile, markPaymentAsPaid, undoPayment } from "../lib/receipts";
+import { createReceiptShareLink, downloadReceiptFile, markPaymentAsPaid, undoPayment } from "../lib/receipts";
 import { supabase } from "../lib/supabase";
+import { buildWhatsAppLink, receiptMessage, reminderMessage } from "../lib/whatsapp";
 import type { Payment, PaymentType } from "../types";
 import { currentMonth, formatCurrency, formatDate, formatMonth, today } from "../utils/format";
 
@@ -30,7 +31,7 @@ interface PaymentRow {
     dia_vencimento: number;
     dia_vencimento_agua_esgoto: number;
     properties: { nome: string; endereco: string } | null;
-    tenants: { nome: string; cpf: string | null } | null;
+    tenants: { nome: string; cpf: string | null; telefone: string | null } | null;
   } | null;
 }
 
@@ -44,11 +45,12 @@ function flattenPayment(row: PaymentRow): Payment {
     property_endereco: row.contracts?.properties?.endereco ?? "",
     tenant_nome: row.contracts?.tenants?.nome ?? "",
     tenant_cpf: row.contracts?.tenants?.cpf ?? null,
+    tenant_telefone: row.contracts?.tenants?.telefone ?? null,
   };
 }
 
 const PAYMENT_SELECT =
-  "*, contracts(dia_vencimento, dia_vencimento_agua_esgoto, properties(nome, endereco), tenants(nome, cpf))";
+  "*, contracts(dia_vencimento, dia_vencimento_agua_esgoto, properties(nome, endereco), tenants(nome, cpf, telefone))";
 
 const TABS: { tipo: PaymentType; label: string; icon: typeof Banknote }[] = [
   { tipo: "aluguel", label: "Aluguel", icon: Banknote },
@@ -208,6 +210,50 @@ export default function Payments() {
     }
   }
 
+  function handleSendReminder(payment: Payment) {
+    const message = reminderMessage({
+      tenantNome: payment.tenant_nome,
+      propertyNome: payment.property_nome,
+      tipo: payment.tipo,
+      valorTotal: payment.valor_total,
+      dataVencimento: payment.data_vencimento,
+      atrasado: payment.status === "atrasado",
+    });
+    const link = buildWhatsAppLink(payment.tenant_telefone, message);
+    if (!link) {
+      toast.error("Inquilino sem telefone cadastrado (ou número inválido).");
+      return;
+    }
+    window.open(link, "_blank");
+  }
+
+  async function handleSendReceipt(payment: Payment) {
+    try {
+      const { data: receipt, error } = await supabase
+        .from("receipts")
+        .select("storage_path")
+        .eq("payment_id", payment.id)
+        .single();
+      if (error || !receipt) throw error ?? new Error("Recibo não encontrado");
+      const receiptUrl = await createReceiptShareLink(receipt.storage_path);
+      const message = receiptMessage({
+        tenantNome: payment.tenant_nome,
+        propertyNome: payment.property_nome,
+        tipo: payment.tipo,
+        mesReferencia: payment.mes_referencia,
+        receiptUrl,
+      });
+      const link = buildWhatsAppLink(payment.tenant_telefone, message);
+      if (!link) {
+        toast.error("Inquilino sem telefone cadastrado (ou número inválido).");
+        return;
+      }
+      window.open(link, "_blank");
+    } catch (err) {
+      toast.error(errorMessage(err, "Não foi possível enviar o recibo"));
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -310,6 +356,14 @@ export default function Payments() {
                               <Download size={15} />
                             </button>
                             <button
+                              onClick={() => handleSendReceipt(p)}
+                              className="p-1.5 text-ink-muted hover:text-status-good hover:bg-status-good/10 rounded-lg transition"
+                              aria-label="Enviar recibo por WhatsApp"
+                              title="Enviar recibo por WhatsApp"
+                            >
+                              <MessageCircle size={15} />
+                            </button>
+                            <button
                               onClick={() => handleUndo(p)}
                               className="p-1.5 text-ink-muted hover:text-ink hover:bg-surface-page rounded-lg transition"
                               aria-label="Desfazer pagamento"
@@ -327,6 +381,14 @@ export default function Payments() {
                               title="Marcar como pago"
                             >
                               <Receipt size={15} />
+                            </button>
+                            <button
+                              onClick={() => handleSendReminder(p)}
+                              className="p-1.5 text-ink-muted hover:text-status-good hover:bg-status-good/10 rounded-lg transition"
+                              aria-label="Enviar lembrete por WhatsApp"
+                              title="Enviar lembrete por WhatsApp"
+                            >
+                              <MessageCircle size={15} />
                             </button>
                             <button
                               onClick={() => setEditModalPayment(p)}

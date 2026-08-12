@@ -109,3 +109,13 @@ export async function downloadReceiptFile(storagePath: string, filename: string)
   link.click();
   URL.revokeObjectURL(url);
 }
+
+// Link temporário (7 dias) para compartilhar o recibo com o inquilino sem
+// que ele precise ter login no sistema — usado no envio por WhatsApp.
+export async function createReceiptShareLink(storagePath: string): Promise<string> {
+  const { data, error } = await supabase.storage
+    .from("recibos")
+    .createSignedUrl(storagePath, 60 * 60 * 24 * 7);
+  if (error || !data) throw error ?? new Error("Não foi possível gerar o link do recibo");
+  return data.signedUrl;
+}

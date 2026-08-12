@@ -56,6 +56,7 @@ export interface Payment {
   property_endereco: string;
   tenant_nome: string;
   tenant_cpf: string | null;
+  tenant_telefone: string | null;
 }
 
 export interface Receipt {
@@ -69,6 +70,7 @@ export interface Receipt {
   valor_total: number;
   property_nome: string;
   tenant_nome: string;
+  tenant_telefone: string | null;
 }
 
 export interface PaymentSummary {

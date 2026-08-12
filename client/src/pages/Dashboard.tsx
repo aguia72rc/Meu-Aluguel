@@ -26,7 +26,7 @@ interface PaymentRow {
     dia_vencimento: number;
     dia_vencimento_agua_esgoto: number;
     properties: { nome: string; endereco: string } | null;
-    tenants: { nome: string; cpf: string | null } | null;
+    tenants: { nome: string; cpf: string | null; telefone: string | null } | null;
   } | null;
 }
 
@@ -50,6 +50,7 @@ function flattenPayment(row: PaymentRow): Payment {
     property_endereco: row.contracts?.properties?.endereco ?? "",
     tenant_nome: row.contracts?.tenants?.nome ?? "",
     tenant_cpf: row.contracts?.tenants?.cpf ?? null,
+    tenant_telefone: row.contracts?.tenants?.telefone ?? null,
   };
 }
 
