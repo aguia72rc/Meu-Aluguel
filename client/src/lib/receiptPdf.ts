@@ -48,6 +48,7 @@ const INK_MUTED: RGB = [137, 135, 129];
 const SURFACE_PAGE: RGB = [249, 249, 247];
 const BORDER: RGB = [225, 224, 217];
 const WHITE: RGB = [255, 255, 255];
+const SIGNATURE_INK: RGB = [30, 41, 82];
 
 const PAGE_WIDTH = 595.28;
 const PAGE_HEIGHT = 841.89;
@@ -200,10 +201,11 @@ function drawFooter(doc: jsPDF, data: ReceiptData, startY: number) {
   doc.setTextColor(...INK_SECONDARY);
   const footerLines = doc.splitTextToSize(RODAPE[data.tipo], CONTENT_WIDTH);
   doc.text(footerLines, MARGIN_X, y);
-  y += footerLines.length * 13 + 44;
+  y += footerLines.length * 13 + 60;
 
   const sigWidth = 220;
   const sigX = (PAGE_WIDTH - sigWidth) / 2;
+  drawSignatureScribble(doc, sigX + sigWidth / 2, y - 10);
   doc.setDrawColor(...INK_MUTED);
   doc.setLineWidth(0.75);
   doc.line(sigX, y, sigX + sigWidth, y);
@@ -227,6 +229,27 @@ function drawFooter(doc: jsPDF, data: ReceiptData, startY: number) {
   doc.setTextColor(...INK_MUTED);
   doc.text("Meu Aluguel · Recibo gerado eletronicamente", MARGIN_X, barY + 16);
   doc.text(`Nº ${data.numero}`, PAGE_WIDTH - MARGIN_X, barY + 16, { align: "right" });
+}
+
+// Rubrica estilizada (traço vetorial, não depende de nenhuma fonte
+// cursiva) desenhada logo acima da linha de assinatura.
+function drawSignatureScribble(doc: jsPDF, centerX: number, baseY: number) {
+  doc.setDrawColor(...SIGNATURE_INK);
+  doc.setLineWidth(1.3);
+  doc.setLineCap("round");
+  doc.setLineJoin("round");
+
+  const segments: [number, number, number, number, number, number][] = [
+    [3, -14, 10, -24, 18, -22],
+    [4, 1, 6, 10, 2, 16],
+    [-4, 4, -10, 2, -12, -6],
+    [2, -8, 8, -14, 18, -12],
+    [8, 4, 14, 10, 24, 4],
+    [6, -6, 14, -10, 24, -2],
+    [6, 4, 12, 8, 20, 2],
+    [4, -6, 10, -8, 16, -2],
+  ];
+  doc.lines(segments, centerX - 60, baseY, [1, 1], "S", false);
 }
 
 function drawBox(doc: jsPDF, x: number, y: number, w: number, h: number) {
