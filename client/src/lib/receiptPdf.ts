@@ -232,24 +232,35 @@ function drawFooter(doc: jsPDF, data: ReceiptData, startY: number) {
 }
 
 // Rubrica estilizada (traço vetorial, não depende de nenhuma fonte
-// cursiva) desenhada logo acima da linha de assinatura.
+// cursiva) desenhada logo acima da linha de assinatura — um "RC"
+// cursivo com floreio, referência às iniciais de Reinaldo Candido.
 function drawSignatureScribble(doc: jsPDF, centerX: number, baseY: number) {
   doc.setDrawColor(...SIGNATURE_INK);
-  doc.setLineWidth(1.3);
+  doc.setLineWidth(1.4);
   doc.setLineCap("round");
   doc.setLineJoin("round");
 
-  const segments: [number, number, number, number, number, number][] = [
-    [3, -14, 10, -24, 18, -22],
-    [4, 1, 6, 10, 2, 16],
-    [-4, 4, -10, 2, -12, -6],
-    [2, -8, 8, -14, 18, -12],
-    [8, 4, 14, 10, 24, 4],
-    [6, -6, 14, -10, 24, -2],
-    [6, 4, 12, 8, 20, 2],
-    [4, -6, 10, -8, 16, -2],
+  const startX = centerX - 66;
+
+  const strokeR: [number, number, number, number, number, number][] = [
+    [2, -12, 6, -22, 12, -24],
+    [7, -2, 11, 3, 10, 9],
+    [-1, 6, -7, 9, -12, 7],
+    [5, 3, 10, 7, 14, 10],
   ];
-  doc.lines(segments, centerX - 60, baseY, [1, 1], "S", false);
+  doc.lines(strokeR, startX, baseY, [1, 1], "S", false);
+
+  const strokeC: [number, number, number, number, number, number][] = [
+    [-9, -4, -14, -13, -10, -21],
+    [3, -7, 11, -10, 18, -8],
+  ];
+  doc.lines(strokeC, startX + 50, baseY - 2, [1, 1], "S", false);
+
+  const strokeTail: [number, number, number, number, number, number][] = [
+    [7, 7, 16, 12, 27, 5],
+    [7, -4, 14, -5, 19, 0],
+  ];
+  doc.lines(strokeTail, startX + 62, baseY - 10, [1, 1], "S", false);
 }
 
 function drawBox(doc: jsPDF, x: number, y: number, w: number, h: number) {
