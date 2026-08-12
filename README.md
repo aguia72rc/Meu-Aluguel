@@ -61,6 +61,15 @@ O repositório já vem com um workflow (`.github/workflows/deploy-pages.yml`) qu
 
 > A `anon key` do Supabase é uma chave pública (protegida pelas políticas de RLS do banco), então não há problema em ela ficar embutida no site publicado.
 
+## 3b. Publicar na Vercel (alternativa ao GitHub Pages)
+
+O app também pode ser hospedado na [Vercel](https://vercel.com), que dá um domínio `.vercel.app` na hora e facilita configurar domínio próprio depois.
+
+1. Na Vercel, **Add New → Project** → selecione o repositório.
+2. Deixe **Root Directory em branco** (não mude para `client`) — o [`vercel.json`](vercel.json) na raiz do repositório já instrui a Vercel a entrar em `client/` para instalar e buildar (`cd client && npm install && npm run build`) e a servir a partir de `client/dist`. Isso existe porque, na prática, o campo "Root Directory" da interface nem sempre é aplicado de forma confiável em builds — o `vercel.json` resolve isso sem depender dele.
+3. Em "Environment Variables", adicione `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` (mesmos valores usados no GitHub Pages).
+4. Deploy. A cada push na `main`, a Vercel builda de novo automaticamente.
+
 ## 4. Publicar a assinatura de calendário (opcional)
 
 Para usar o link de calendário (iPhone / Google Calendar / Outlook), publique a Edge Function que gera o feed. Não precisa da CLI do Supabase — dá pra fazer tudo pelo painel:
@@ -90,4 +99,5 @@ client/               Aplicativo React + Vite + TypeScript + Tailwind CSS
 supabase/schema.sql   Schema do banco, políticas de RLS e bucket de recibos
 supabase/migrations/  Migrações incrementais para projetos já existentes
 supabase/functions/   Edge Function calendar-feed (assinatura de calendário)
+vercel.json            Configuração de build para hospedar na Vercel (opcional)
 ```
