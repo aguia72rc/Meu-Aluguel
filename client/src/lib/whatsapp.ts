@@ -60,3 +60,12 @@ export function receiptMessage(params: {
     `referente ao imóvel ${propertyNome}: ${receiptUrl}`
   );
 }
+
+export function tenantPortalMessage(params: { tenantNome: string; portalUrl: string }): string {
+  const { tenantNome, portalUrl } = params;
+  const primeiroNome = tenantNome.split(" ")[0];
+  return (
+    `Olá, ${primeiroNome}! Aqui está o seu link pessoal para acompanhar pagamentos, baixar recibos ` +
+    `e ver o prazo do seu contrato a qualquer momento: ${portalUrl}`
+  );
+}

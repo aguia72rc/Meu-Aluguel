@@ -14,7 +14,8 @@ Sistema web para gestão de imóveis alugados: cadastro de imóveis e inquilinos
 - **Painel**: resumo do mês (recebido, pendente, atrasado), gráfico de receita dos últimos 6 meses e próximos vencimentos.
 - **Calendário (iPhone / Google Calendar / Outlook)**: link único de assinatura, gerado na tela de Perfil, com vencimentos pendentes, atrasos e lembretes de renovação de contrato — atualiza sozinho, sem precisar exportar nada de novo.
 - **Envio por WhatsApp**: nas telas de Pagamentos e Recibos, um botão abre o WhatsApp já com a mensagem pronta para o inquilino — lembrete de vencimento/atraso ou o link do recibo em PDF (válido por 7 dias). Usa o telefone cadastrado do inquilino; é um clique manual, não é envio automático (não precisa de conta ou aprovação da Meta).
-- Login via Supabase Auth (e-mail e senha).
+- **Portal do inquilino**: link pessoal e sem senha (gerado na tela de Inquilinos) onde cada morador consulta sozinho o prazo até o fim do seu contrato (contagem de dias, com aviso quando estiver perto de vencer) e baixa os recibos de aluguel e água/esgoto já pagos — sem precisar entrar em contato com o administrador.
+- Login via Supabase Auth (e-mail e senha) — só para os administradores; os inquilinos não têm conta, usam apenas o link do portal.
 
 ## 1. Criar o projeto no Supabase
 
@@ -85,6 +86,20 @@ Depois disso, na tela de **Perfil** do sistema, clique em "Gerar link do calend�
 
 > O link do calendário funciona como uma senha: quem tiver o link vê os vencimentos e valores. Trate-o como algo privado, e gere um novo (revogando o antigo) se ele vazar.
 
+## 5. Publicar o portal do inquilino (opcional)
+
+Para os inquilinos poderem consultar seus recibos e o prazo do contrato sozinhos, publique a Edge Function que serve esses dados. Mesmo processo da assinatura de calendário, sem precisar da CLI do Supabase:
+
+1. No projeto Supabase, vá em **Edge Functions > Deploy a new function**.
+2. Nome da função: `tenant-portal`.
+3. Cole o conteúdo de [`supabase/functions/tenant-portal/index.ts`](supabase/functions/tenant-portal/index.ts) no editor e clique em **Deploy**.
+4. **Importante:** nas configurações dessa função, **desligue "Enforce JWT Verification"** — pelo mesmo motivo da `calendar-feed`, o navegador do inquilino não tem um login do Supabase.
+5. Rode [`supabase/migrations/005_tenant_portal.sql`](supabase/migrations/005_tenant_portal.sql) no SQL Editor (cria a tabela que guarda o token de cada inquilino).
+
+Depois disso, na tela de **Inquilinos**, clique no ícone de link ao lado do inquilino para gerar o link do portal dele e enviar por WhatsApp (ou copiar e mandar por outro meio).
+
+> Assim como o link do calendário, o link do portal funciona como uma senha: quem tiver o link vê os dados daquele inquilino. Gere um novo (revogando o antigo) se ele vazar ou trocar de inquilino.
+
 ## Fluxo de uso
 
 1. Cadastre seus **imóveis**, informando o valor do aluguel e da taxa de água e esgoto.
@@ -93,6 +108,7 @@ Depois disso, na tela de **Perfil** do sistema, clique em "Gerar link do calend�
 4. Todo mês, na tela de **Pagamentos**, clique em "Gerar cobranças" para criar os lançamentos de aluguel e de água/esgoto de todos os contratos ativos — cada um aparece na sua própria aba.
 5. Quando o inquilino pagar (o aluguel e a água/esgoto podem ser pagos em datas diferentes), clique em "Marcar como pago" — o recibo em PDF daquele tipo é gerado automaticamente e fica disponível na tela de **Recibos**.
 6. Para cobrar ou avisar o inquilino, clique no ícone do WhatsApp (na tela de Pagamentos ou de Recibos) — ele abre o WhatsApp com a mensagem pronta, só falta enviar. Requer o telefone do inquilino cadastrado.
+7. Na tela de **Inquilinos**, clique no ícone de link para gerar (uma vez só) o link do portal daquele inquilino e mandar por WhatsApp — a partir daí ele mesmo acompanha o prazo do contrato e baixa seus recibos, sem precisar te pedir.
 
 ## Estrutura do projeto
 
@@ -100,6 +116,6 @@ Depois disso, na tela de **Perfil** do sistema, clique em "Gerar link do calend�
 client/               Aplicativo React + Vite + TypeScript + Tailwind CSS
 supabase/schema.sql   Schema do banco, políticas de RLS e bucket de recibos
 supabase/migrations/  Migrações incrementais para projetos já existentes
-supabase/functions/   Edge Function calendar-feed (assinatura de calendário)
+supabase/functions/   Edge Functions calendar-feed (calendário) e tenant-portal (portal do inquilino)
 vercel.json            Configuração de build para hospedar na Vercel (opcional)
 ```

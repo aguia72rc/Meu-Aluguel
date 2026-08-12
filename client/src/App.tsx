@@ -9,6 +9,7 @@ import Profile from "./pages/Profile";
 import Properties from "./pages/Properties";
 import Receipts from "./pages/Receipts";
 import Tenants from "./pages/Tenants";
+import TenantPortal from "./pages/TenantPortal";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -21,6 +22,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/portal/:token" element={<TenantPortal />} />
       <Route
         path="/"
         element={

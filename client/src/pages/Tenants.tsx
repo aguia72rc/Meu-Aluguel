@@ -1,4 +1,4 @@
-import { Pencil, Plus, Trash2, Users } from "lucide-react";
+import { Check, Copy, Link2, MessageCircle, Pencil, Plus, RefreshCw, Trash2, Users } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import EmptyState from "../components/EmptyState";
 import Field from "../components/Field";
@@ -7,6 +7,8 @@ import { useConfirm } from "../context/ConfirmContext";
 import { useToast } from "../context/ToastContext";
 import { errorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
+import { getOrCreatePortalLink, regeneratePortalLink } from "../lib/tenantPortal";
+import { buildWhatsAppLink, tenantPortalMessage } from "../lib/whatsapp";
 import type { Tenant } from "../types";
 
 const emptyForm = { nome: "", cpf: "", email: "", telefone: "", observacoes: "" };
@@ -28,6 +30,7 @@ export default function Tenants() {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [portalTenant, setPortalTenant] = useState<Tenant | null>(null);
   const confirm = useConfirm();
   const toast = useToast();
 
@@ -166,6 +169,14 @@ export default function Tenants() {
                     <td className="px-5 py-3">
                       <div className="flex justify-end gap-1">
                         <button
+                          onClick={() => setPortalTenant(t)}
+                          className="p-1.5 text-ink-muted hover:text-primary-600 hover:bg-primary-50 rounded-lg transition"
+                          aria-label={`Portal de ${t.nome}`}
+                          title="Portal do inquilino"
+                        >
+                          <Link2 size={15} />
+                        </button>
+                        <button
                           onClick={() => openEdit(t)}
                           className="p-1.5 text-ink-muted hover:text-primary-600 hover:bg-primary-50 rounded-lg transition"
                           aria-label={`Editar ${t.nome}`}
@@ -246,6 +257,117 @@ export default function Tenants() {
           </form>
         </Modal>
       )}
+
+      {portalTenant && (
+        <PortalLinkModal tenant={portalTenant} onClose={() => setPortalTenant(null)} />
+      )}
     </div>
+  );
+}
+
+function PortalLinkModal({ tenant, onClose }: { tenant: Tenant; onClose: () => void }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [regenerating, setRegenerating] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const toast = useToast();
+  const confirm = useConfirm();
+
+  async function load() {
+    setLoading(true);
+    try {
+      setUrl(await getOrCreatePortalLink(tenant.id));
+    } catch (err) {
+      toast.error(errorMessage(err, "Não foi possível gerar o link do portal"));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleRegenerate() {
+    const ok = await confirm({
+      title: "Gerar um novo link?",
+      description: "O link atual para de funcionar imediatamente.",
+      confirmLabel: "Gerar novo link",
+    });
+    if (!ok) return;
+    setRegenerating(true);
+    try {
+      setUrl(await regeneratePortalLink(tenant.id));
+      toast.success("Novo link gerado.");
+    } catch (err) {
+      toast.error(errorMessage(err, "Não foi possível gerar o link"));
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
+  async function handleCopy() {
+    if (!url) return;
+    await navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  const whatsappLink = url
+    ? buildWhatsAppLink(tenant.telefone, tenantPortalMessage({ tenantNome: tenant.nome, portalUrl: url }))
+    : null;
+
+  return (
+    <Modal title={`Portal de ${tenant.nome}`} onClose={onClose}>
+      <div className="space-y-4">
+        <p className="text-sm text-ink-secondary">
+          Link pessoal e sem senha para {tenant.nome} acompanhar pagamentos, baixar recibos e ver o
+          prazo até o fim do contrato — a qualquer momento, sem precisar falar com você.
+        </p>
+        {loading ? (
+          <div className="h-10 bg-surface-page rounded-lg animate-pulse" />
+        ) : url ? (
+          <>
+            <div className="flex gap-2">
+              <input
+                readOnly
+                value={url}
+                className="input flex-1 text-xs"
+                onFocus={(e) => e.target.select()}
+              />
+              <button
+                onClick={handleCopy}
+                className="btn-secondary px-3"
+                title="Copiar link"
+                aria-label="Copiar link do portal"
+              >
+                {copied ? <Check size={16} /> : <Copy size={16} />}
+              </button>
+            </div>
+
+            {whatsappLink ? (
+              <a href={whatsappLink} target="_blank" rel="noreferrer" className="btn-primary w-full justify-center">
+                <MessageCircle size={16} />
+                Enviar por WhatsApp
+              </a>
+            ) : (
+              <p className="text-xs text-ink-muted">
+                Cadastre o telefone deste inquilino para poder enviar o link por WhatsApp.
+              </p>
+            )}
+
+            <button
+              onClick={handleRegenerate}
+              disabled={regenerating}
+              className="inline-flex items-center gap-1.5 text-sm text-ink-muted hover:text-status-critical transition"
+            >
+              <RefreshCw size={14} />
+              {regenerating ? "Gerando..." : "Gerar novo link (revoga o atual)"}
+            </button>
+          </>
+        ) : null}
+      </div>
+    </Modal>
   );
 }
