@@ -18,6 +18,8 @@ const NUMERO_PREFIXO: Record<PaymentType, string> = {
   agua_esgoto: "AGU",
 };
 
+export const PROPRIETARIO_NOME = "Reinaldo Candido dos Santos";
+
 export async function markPaymentAsPaid({ paymentId, dataPagamento, formaPagamento }: PayInput) {
   const { data: payment, error: fetchError } = await supabase
     .from("payments")
@@ -29,8 +31,6 @@ export async function markPaymentAsPaid({ paymentId, dataPagamento, formaPagamen
   const { data: userData } = await supabase.auth.getUser();
   const user = userData.user;
   if (!user) throw new Error("Sessão expirada, faça login novamente");
-  const proprietarioNome =
-    (user.user_metadata?.name as string | undefined) || user.email || "Administrador";
 
   const { error: updateError } = await supabase
     .from("payments")
@@ -53,7 +53,7 @@ export async function markPaymentAsPaid({ paymentId, dataPagamento, formaPagamen
     numero,
     tipo,
     dataEmissao: new Date().toISOString(),
-    proprietarioNome,
+    proprietarioNome: PROPRIETARIO_NOME,
     tenantNome: contract.tenants.nome,
     tenantCpf: contract.tenants.cpf,
     propertyNome: contract.properties.nome,
