@@ -240,27 +240,30 @@ function drawSignatureScribble(doc: jsPDF, centerX: number, baseY: number) {
   doc.setLineCap("round");
   doc.setLineJoin("round");
 
-  const startX = centerX - 66;
+  const startX = centerX - 74;
 
   const strokeR: [number, number, number, number, number, number][] = [
-    [2, -12, 6, -22, 12, -24],
-    [7, -2, 11, 3, 10, 9],
-    [-1, 6, -7, 9, -12, 7],
-    [5, 3, 10, 7, 14, 10],
+    [2, -13, 6, -24, 13, -26],
+    [8, -2, 12, 3, 11, 10],
+    [-1, 7, -8, 10, -13, 8],
+    [6, 4, 12, 8, 17, 12],
   ];
   doc.lines(strokeR, startX, baseY, [1, 1], "S", false);
 
   const strokeC: [number, number, number, number, number, number][] = [
-    [-9, -4, -14, -13, -10, -21],
-    [3, -7, 11, -10, 18, -8],
+    [-10, -5, -15, -15, -11, -24],
+    [3, -8, 12, -11, 20, -9],
   ];
-  doc.lines(strokeC, startX + 50, baseY - 2, [1, 1], "S", false);
+  doc.lines(strokeC, startX + 38, baseY - 2, [1, 1], "S", false);
 
   const strokeTail: [number, number, number, number, number, number][] = [
-    [7, 7, 16, 12, 27, 5],
-    [7, -4, 14, -5, 19, 0],
+    [6, 6, 12, 10, 20, 6],
+    [6, -3, 9, -8, 6, -14],
+    [-3, -6, -10, -8, -14, -3],
+    [5, 8, 16, 14, 28, 8],
+    [8, -5, 16, -6, 22, 0],
   ];
-  doc.lines(strokeTail, startX + 62, baseY - 10, [1, 1], "S", false);
+  doc.lines(strokeTail, startX + 58, baseY - 12, [1, 1], "S", false);
 }
 
 function drawBox(doc: jsPDF, x: number, y: number, w: number, h: number) {
