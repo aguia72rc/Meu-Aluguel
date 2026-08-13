@@ -7,6 +7,7 @@ interface AuthContextValue {
   loading: boolean;
   isTenant: boolean;
   tenantId: string | null;
+  mustChangePassword: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -86,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         isTenant: tenantId !== null,
         tenantId,
+        mustChangePassword: session?.user?.user_metadata?.must_change_password === true,
         login,
         logout,
       }}

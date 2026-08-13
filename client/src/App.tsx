@@ -9,6 +9,7 @@ import Payments from "./pages/Payments";
 import Profile from "./pages/Profile";
 import Properties from "./pages/Properties";
 import Receipts from "./pages/Receipts";
+import TenantForcedPasswordChange from "./pages/TenantForcedPasswordChange";
 import TenantHome from "./pages/TenantHome";
 import Tenants from "./pages/Tenants";
 
@@ -30,9 +31,16 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 // aqui a gente evita nem tentar renderizar/navegar para as rotas de
 // administração quando quem está logado é um inquilino.
 function RoleRouter() {
-  const { isTenant } = useAuth();
+  const { isTenant, mustChangePassword } = useAuth();
 
   if (isTenant) {
+    if (mustChangePassword) {
+      return (
+        <Routes>
+          <Route path="*" element={<TenantForcedPasswordChange />} />
+        </Routes>
+      );
+    }
     return (
       <Routes>
         <Route path="/" element={<TenantHome />} />

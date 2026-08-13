@@ -120,7 +120,12 @@ async function handleRequest(req: Request): Promise<Response> {
         Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ email, password, email_confirm: true }),
+      body: JSON.stringify({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { must_change_password: true },
+      }),
     });
     if (!updateRes.ok) {
       return jsonResponse({ error: `Não foi possível atualizar o login (${await updateRes.text()})` }, 400);
@@ -135,7 +140,12 @@ async function handleRequest(req: Request): Promise<Response> {
       Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ email, password, email_confirm: true }),
+    body: JSON.stringify({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { must_change_password: true },
+    }),
   });
   if (!createRes.ok) {
     const text = await createRes.text();

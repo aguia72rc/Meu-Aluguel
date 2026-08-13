@@ -383,7 +383,10 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
       return;
     }
     setSubmitting(true);
-    const { error: updateError } = await supabase.auth.updateUser({ password });
+    const { error: updateError } = await supabase.auth.updateUser({
+      password,
+      data: { must_change_password: false },
+    });
     setSubmitting(false);
     if (updateError) {
       setError(errorMessage(updateError, "Não foi possível trocar a senha"));
