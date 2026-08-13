@@ -45,6 +45,22 @@ async function serviceRoleRest(path: string, init?: RequestInit): Promise<any> {
 }
 
 Deno.serve(async (req) => {
+  try {
+    return await handleRequest(req);
+  } catch (err) {
+    // Sem isso, qualquer exceção não tratada (ex: serviceRoleRest lançando
+    // erro) faz o Deno devolver uma resposta de erro genérica (não-JSON),
+    // e o cliente só consegue mostrar "Edge Function returned a non-2xx
+    // status code" em vez da mensagem real do problema.
+    console.error(err);
+    return jsonResponse(
+      { error: err instanceof Error ? err.message : "Erro interno ao processar a requisição." },
+      500
+    );
+  }
+});
+
+async function handleRequest(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -143,4 +159,4 @@ Deno.serve(async (req) => {
   }
 
   return jsonResponse({ success: true, created: true });
-});
+}
