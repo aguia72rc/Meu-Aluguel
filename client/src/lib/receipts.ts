@@ -41,11 +41,18 @@ export async function markPaymentAsPaid({ paymentId, dataPagamento, formaPagamen
   const tipo = payment.tipo as PaymentType;
   const prefixo = NUMERO_PREFIXO[tipo];
   const year = dataPagamento.slice(0, 4);
-  const { count } = await supabase
+  // Usa o maior número já emitido (não a contagem de linhas): se um
+  // recibo no meio da sequência for desfeito e reemitido, contar linhas
+  // reaproveitaria um número que outro recibo mais recente já usa.
+  const { data: lastReceipt } = await supabase
     .from("receipts")
-    .select("id", { count: "exact", head: true })
-    .like("numero", `${prefixo}-${year}-%`);
-  const numero = `${prefixo}-${year}-${String((count ?? 0) + 1).padStart(5, "0")}`;
+    .select("numero")
+    .like("numero", `${prefixo}-${year}-%`)
+    .order("numero", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const lastSeq = lastReceipt ? Number(lastReceipt.numero.split("-")[2]) : 0;
+  const numero = `${prefixo}-${year}-${String((Number.isFinite(lastSeq) ? lastSeq : 0) + 1).padStart(5, "0")}`;
 
   const contract = payment.contracts as unknown as ContractJoin;
 
