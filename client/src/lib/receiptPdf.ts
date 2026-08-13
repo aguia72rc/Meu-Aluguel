@@ -232,8 +232,9 @@ function drawFooter(doc: jsPDF, data: ReceiptData, startY: number) {
 }
 
 // Rubrica estilizada (traço vetorial, não depende de nenhuma fonte
-// cursiva) desenhada logo acima da linha de assinatura — um "RC"
-// cursivo com floreio, referência às iniciais de Reinaldo Candido.
+// cursiva) desenhada logo acima da linha de assinatura — uma única
+// linha contínua (sem levantar a "caneta"), com um "R" no início como
+// referência ao nome do locador, seguido de floreio.
 function drawSignatureScribble(doc: jsPDF, centerX: number, baseY: number) {
   doc.setDrawColor(...SIGNATURE_INK);
   doc.setLineWidth(1.4);
@@ -241,29 +242,34 @@ function drawSignatureScribble(doc: jsPDF, centerX: number, baseY: number) {
   doc.setLineJoin("round");
 
   const startX = centerX - 74;
+  type Segment = [number, number, number, number, number, number];
 
-  const strokeR: [number, number, number, number, number, number][] = [
+  const strokeR: Segment[] = [
     [2, -13, 6, -24, 13, -26],
     [8, -2, 12, 3, 11, 10],
     [-1, 7, -8, 10, -13, 8],
     [6, 4, 12, 8, 17, 12],
   ];
   doc.lines(strokeR, startX, baseY, [1, 1], "S", false);
+  const rEndX = startX + 28;
+  const rEndY = baseY + 4;
 
-  const strokeC: [number, number, number, number, number, number][] = [
+  const strokeLoop: Segment[] = [
     [-10, -5, -15, -15, -11, -24],
     [3, -8, 12, -11, 20, -9],
   ];
-  doc.lines(strokeC, startX + 38, baseY - 2, [1, 1], "S", false);
+  doc.lines(strokeLoop, rEndX, rEndY, [1, 1], "S", false);
+  const loopEndX = rEndX + 9;
+  const loopEndY = rEndY - 33;
 
-  const strokeTail: [number, number, number, number, number, number][] = [
+  const strokeTail: Segment[] = [
     [6, 6, 12, 10, 20, 6],
     [6, -3, 9, -8, 6, -14],
     [-3, -6, -10, -8, -14, -3],
     [5, 8, 16, 14, 28, 8],
     [8, -5, 16, -6, 22, 0],
   ];
-  doc.lines(strokeTail, startX + 58, baseY - 12, [1, 1], "S", false);
+  doc.lines(strokeTail, loopEndX, loopEndY, [1, 1], "S", false);
 }
 
 function drawBox(doc: jsPDF, x: number, y: number, w: number, h: number) {
