@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   Building2,
   CalendarClock,
+  CheckCircle2,
   Download,
   Droplets,
   Home,
@@ -9,6 +10,7 @@ import {
   Loader2,
   LogOut,
   Receipt as ReceiptIcon,
+  Wallet,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
@@ -21,7 +23,7 @@ import { errorMessage } from "../lib/errors";
 import { downloadReceiptFile } from "../lib/receipts";
 import { supabase } from "../lib/supabase";
 import type { PaymentType } from "../types";
-import { formatCurrency, formatDate, formatMonth } from "../utils/format";
+import { formatCurrency, formatDate, formatMonth, today } from "../utils/format";
 
 interface ContractRow {
   id: string;
@@ -36,6 +38,8 @@ interface PaymentRow {
   tipo: PaymentType;
   mes_referencia: string;
   valor_total: number;
+  status: "pendente" | "pago" | "atrasado" | "cancelado";
+  data_vencimento: string;
   data_pagamento: string | null;
   contract_id: string;
   receipts:
@@ -65,10 +69,30 @@ interface ReceiptView {
   property_nome: string;
 }
 
+interface PendingView {
+  id: string;
+  tipo: PaymentType;
+  mes_referencia: string;
+  valor_total: number;
+  data_vencimento: string;
+  status: "pendente" | "atrasado";
+  property_nome: string;
+}
+
 const TABS: { tipo: PaymentType; label: string; icon: typeof Home }[] = [
   { tipo: "aluguel", label: "Aluguel", icon: Home },
   { tipo: "agua_esgoto", label: "Água e Esgoto", icon: Droplets },
 ];
+
+const TIPO_LABEL: Record<PaymentType, string> = {
+  aluguel: "Aluguel",
+  agua_esgoto: "Água e Esgoto",
+};
+
+const TIPO_ICON: Record<PaymentType, typeof Home> = {
+  aluguel: Home,
+  agua_esgoto: Droplets,
+};
 
 function diasRestantes(dataFim: string | null): number | null {
   if (!dataFim) return null;
@@ -88,6 +112,7 @@ export default function TenantHome() {
   const [tenantNome, setTenantNome] = useState("");
   const [contracts, setContracts] = useState<ContractView[]>([]);
   const [receipts, setReceipts] = useState<ReceiptView[]>([]);
+  const [pending, setPending] = useState<PendingView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -137,14 +162,18 @@ export default function TenantHome() {
         const { data: paymentRows, error: paymentsError } = await supabase
           .from("payments")
           .select(
-            "id, tipo, mes_referencia, valor_total, data_pagamento, contract_id, receipts(numero, data_emissao, storage_path)"
+            "id, tipo, mes_referencia, valor_total, status, data_vencimento, data_pagamento, contract_id, receipts(numero, data_emissao, storage_path)"
           )
           .in("contract_id", contractIds)
-          .eq("status", "pago")
-          .order("data_pagamento", { ascending: false });
+          .neq("status", "cancelado")
+          .order("data_vencimento", { ascending: false });
         if (paymentsError) throw paymentsError;
 
-        const receiptsView: ReceiptView[] = ((paymentRows as unknown as PaymentRow[]) ?? [])
+        const rows = (paymentRows as unknown as PaymentRow[]) ?? [];
+        const todayIso = today();
+
+        const receiptsView: ReceiptView[] = rows
+          .filter((p) => p.status === "pago")
           .map((p) => {
             const receipt = Array.isArray(p.receipts) ? p.receipts[0] : p.receipts;
             if (!receipt) return null;
@@ -161,8 +190,23 @@ export default function TenantHome() {
           })
           .filter((r): r is ReceiptView => r !== null);
         setReceipts(receiptsView);
+
+        const pendingView: PendingView[] = rows
+          .filter((p) => p.status === "pendente" || p.status === "atrasado")
+          .map((p) => ({
+            id: p.id,
+            tipo: p.tipo,
+            mes_referencia: p.mes_referencia,
+            valor_total: p.valor_total,
+            data_vencimento: p.data_vencimento,
+            status: p.status === "pendente" && p.data_vencimento < todayIso ? "atrasado" : (p.status as "pendente" | "atrasado"),
+            property_nome: propertyByContract.get(p.contract_id) ?? "Imóvel",
+          }))
+          .sort((a, b) => a.data_vencimento.localeCompare(b.data_vencimento));
+        setPending(pendingView);
       } else {
         setReceipts([]);
+        setPending([]);
       }
     } catch (err) {
       setError(errorMessage(err, "Não foi possível carregar seus dados"));
@@ -253,16 +297,25 @@ export default function TenantHome() {
                       : "Acompanhe aqui seus recibos de pagamento sempre que precisar."}
                   </p>
                 </div>
-                {activeContract && activeContract.dias_restantes !== null && (
+                {activeContract && activeContract.data_fim && activeContract.dias_restantes !== null && (
+                  <div className="bg-white/10 rounded-xl px-5 py-4 flex items-center gap-4 shrink-0">
+                    <ContractProgressRing contract={activeContract} />
+                    <div className="text-left">
+                      <p className="text-xs text-primary-100">Contrato até</p>
+                      <p className="text-lg font-bold tabular-nums leading-tight mt-0.5">
+                        {formatDate(activeContract.data_fim)}
+                      </p>
+                      <p className="text-xs text-primary-100 mt-0.5">
+                        {activeContract.dias_restantes < 0
+                          ? `${Math.abs(activeContract.dias_restantes)} dia${Math.abs(activeContract.dias_restantes) === 1 ? "" : "s"} em atraso`
+                          : `${activeContract.dias_restantes} dia${activeContract.dias_restantes === 1 ? "" : "s"} restantes`}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {activeContract && !activeContract.data_fim && (
                   <div className="bg-white/10 rounded-xl px-6 py-4 text-center shrink-0">
-                    <p className="text-3xl font-bold tabular-nums">
-                      {Math.abs(activeContract.dias_restantes)}
-                    </p>
-                    <p className="text-xs text-primary-100 mt-1 max-w-[9rem]">
-                      {activeContract.dias_restantes < 0
-                        ? "dias em atraso — aguardando renovação"
-                        : "dias até o fim do contrato"}
-                    </p>
+                    <p className="text-sm font-medium">Prazo indeterminado</p>
                   </div>
                 )}
               </div>
@@ -285,6 +338,49 @@ export default function TenantHome() {
                   {contracts.map((c) => (
                     <ContractCard key={c.id} contract={c} />
                   ))}
+                </div>
+              )}
+            </div>
+
+            <div className="card overflow-hidden">
+              <div className="px-5 py-4 flex items-center gap-2">
+                <Wallet size={16} className="text-primary-600" />
+                <h2 className="text-sm font-semibold text-ink">Pagamentos pendentes</h2>
+              </div>
+              {pending.length === 0 ? (
+                <EmptyState
+                  icon={CheckCircle2}
+                  title="Tudo em dia!"
+                  description="Nenhum pagamento pendente no momento."
+                />
+              ) : (
+                <div className="divide-y divide-surface-border/60">
+                  {pending.map((p) => {
+                    const Icon = TIPO_ICON[p.tipo];
+                    return (
+                      <div key={p.id} className="flex items-center justify-between gap-3 px-5 py-3.5">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="h-9 w-9 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center shrink-0">
+                            <Icon size={16} />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-ink truncate">
+                              {TIPO_LABEL[p.tipo]} · {formatMonth(p.mes_referencia)}
+                            </p>
+                            <p className="text-xs text-ink-muted truncate">
+                              {p.property_nome} · Vence em {formatDate(p.data_vencimento)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="text-sm font-medium text-ink tabular-nums">
+                            {formatCurrency(p.valor_total)}
+                          </span>
+                          <StatusBadge status={p.status} />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -438,6 +534,74 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
         </div>
       </form>
     </Modal>
+  );
+}
+
+// Anel de progresso do prazo do contrato (tempo decorrido desde o início
+// até o fim). A cor acompanha a urgência (mesmos limiares do ContractCard).
+function ContractProgressRing({ contract }: { contract: ContractView }) {
+  const size = 56;
+  const strokeWidth = 5;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+
+  const dias = contract.dias_restantes;
+  let color = "#86efac";
+  if (dias !== null) {
+    if (dias <= 30) color = "#fca5a5";
+    else if (dias <= 90) color = "#fcd34d";
+  }
+
+  const start = new Date(`${contract.data_inicio}T00:00:00`).getTime();
+  const end = contract.data_fim ? new Date(`${contract.data_fim}T00:00:00`).getTime() : start;
+  const rawPercent = end > start ? ((Date.now() - start) / (end - start)) * 100 : 100;
+  const targetPercent = Math.min(100, Math.max(0, rawPercent));
+
+  const [displayPercent, setDisplayPercent] = useState(0);
+  useEffect(() => {
+    const prefersReduced =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReduced) {
+      setDisplayPercent(targetPercent);
+      return;
+    }
+    const raf = requestAnimationFrame(() => setDisplayPercent(targetPercent));
+    return () => cancelAnimationFrame(raf);
+  }, [targetPercent]);
+
+  const offset = circumference * (1 - displayPercent / 100);
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      className="shrink-0 -rotate-90"
+      role="img"
+      aria-label={`${Math.round(targetPercent)}% do prazo do contrato decorrido`}
+    >
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke="rgba(255,255,255,0.2)"
+        strokeWidth={strokeWidth}
+      />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+        strokeLinecap="round"
+        style={{ transition: "stroke-dashoffset 0.8s ease-out" }}
+      />
+    </svg>
   );
 }
 
