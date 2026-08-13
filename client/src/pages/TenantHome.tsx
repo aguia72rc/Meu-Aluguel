@@ -245,11 +245,13 @@ export default function TenantHome() {
               />
               <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
                 <div>
-                  <p className="text-primary-100 text-sm">Bem-vindo(a) de volta</p>
+                  <p className="text-primary-100 text-sm">Que bom ter você aqui!</p>
                   <h1 className="text-2xl sm:text-3xl font-bold mt-1">Olá, {primeiroNome}!</h1>
-                  {activeContract && (
-                    <p className="text-primary-100 text-sm mt-2">{activeContract.property_nome}</p>
-                  )}
+                  <p className="text-primary-100 text-sm mt-2 max-w-sm">
+                    {activeContract
+                      ? `Acompanhe aqui o prazo do seu contrato em ${activeContract.property_nome} e baixe seus recibos sempre que precisar.`
+                      : "Acompanhe aqui seus recibos de pagamento sempre que precisar."}
+                  </p>
                 </div>
                 {activeContract && activeContract.dias_restantes !== null && (
                   <div className="bg-white/10 rounded-xl px-6 py-4 text-center shrink-0">

@@ -36,7 +36,7 @@ export default function TenantForcedPasswordChange() {
       setError(errorMessage(updateError, "Não foi possível trocar a senha"));
       return;
     }
-    toast.success("Senha definida. Bem-vindo(a)!");
+    toast.success("Senha definida com sucesso! Seja bem-vindo(a) ao Meu Aluguel.");
   }
 
   async function handleLogout() {
