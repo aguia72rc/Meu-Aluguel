@@ -41,7 +41,11 @@ async function serviceRoleRest(path: string, init?: RequestInit): Promise<any> {
   if (!res.ok) {
     throw new Error(`Supabase REST error (${res.status}): ${await res.text()}`);
   }
-  return res.status === 204 ? null : res.json();
+  // Com "Prefer: return=minimal" o PostgREST responde sem corpo (às vezes
+  // 201, às vezes 204, dependendo do método) — checar o texto em vez do
+  // status evita chamar .json() num corpo vazio.
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
 }
 
 Deno.serve(async (req) => {
