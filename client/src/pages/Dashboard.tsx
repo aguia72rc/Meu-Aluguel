@@ -1,7 +1,19 @@
-import { AlertCircle, ArrowRight, CircleDollarSign, Clock, Droplets, Home } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowRight,
+  CircleDollarSign,
+  Clock,
+  Droplets,
+  Home,
+  Minus,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import AnimatedNumber from "../components/AnimatedNumber";
 import RevenueChart, { type RevenuePoint } from "../components/RevenueChart";
+import Sparkline from "../components/Sparkline";
 import StatusBadge from "../components/StatusBadge";
 import { errorMessage } from "../lib/errors";
 import { supabase } from "../lib/supabase";
@@ -79,10 +91,40 @@ function lastMonths(count: number): string[] {
   return months;
 }
 
+interface Trend {
+  icon: "up" | "down" | "flat";
+  label: string;
+  tone: "good" | "bad" | "neutral";
+}
+
+function computeTrend(series: number[], goodDirection: "up" | "down"): Trend | null {
+  if (series.length < 2) return null;
+  const current = series[series.length - 1];
+  const previous = series[series.length - 2];
+
+  if (previous === 0 && current === 0) {
+    return { icon: "flat", label: "Sem alteração", tone: "neutral" };
+  }
+  if (previous === 0) {
+    return { icon: "up", label: "Novo neste mês", tone: goodDirection === "up" ? "good" : "bad" };
+  }
+  const pct = ((current - previous) / previous) * 100;
+  if (Math.abs(pct) < 1) {
+    return { icon: "flat", label: "Estável vs. mês anterior", tone: "neutral" };
+  }
+  const icon = pct > 0 ? "up" : "down";
+  const tone = icon === goodDirection ? "good" : "bad";
+  const label = `${pct > 0 ? "+" : ""}${pct.toFixed(0)}% vs. mês anterior`;
+  return { icon, label, tone };
+}
+
 export default function Dashboard() {
   const [summary, setSummary] = useState<PaymentSummary | null>(null);
   const [pendentes, setPendentes] = useState<Payment[]>([]);
   const [chartData, setChartData] = useState<RevenuePoint[]>([]);
+  const [recebidoSeries, setRecebidoSeries] = useState<number[]>([]);
+  const [pendenteSeries, setPendenteSeries] = useState<number[]>([]);
+  const [atrasadoSeries, setAtrasadoSeries] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
 
   async function load() {
@@ -123,9 +165,15 @@ export default function Dashboard() {
 
     const months = lastMonths(6);
     const paidByMonth = new Map<string, number>();
+    const pendenteByMonth = new Map<string, number>();
+    const atrasadoByMonth = new Map<string, number>();
     for (const p of all) {
       if (p.status === "pago") {
         paidByMonth.set(p.mes_referencia, (paidByMonth.get(p.mes_referencia) || 0) + p.valor_total);
+      } else if (p.status === "pendente") {
+        pendenteByMonth.set(p.mes_referencia, (pendenteByMonth.get(p.mes_referencia) || 0) + p.valor_total);
+      } else if (p.status === "atrasado") {
+        atrasadoByMonth.set(p.mes_referencia, (atrasadoByMonth.get(p.mes_referencia) || 0) + p.valor_total);
       }
     }
     setChartData(
@@ -134,6 +182,9 @@ export default function Dashboard() {
         value: paidByMonth.get(m) || 0,
       }))
     );
+    setRecebidoSeries(months.map((m) => paidByMonth.get(m) || 0));
+    setPendenteSeries(months.map((m) => pendenteByMonth.get(m) || 0));
+    setAtrasadoSeries(months.map((m) => atrasadoByMonth.get(m) || 0));
 
     setLoading(false);
   }
@@ -168,19 +219,28 @@ export default function Dashboard() {
           icon={CircleDollarSign}
           tone="good"
           label="Recebido no mês"
-          value={formatCurrency(summary.recebidoMes)}
+          value={summary.recebidoMes}
+          sparklineData={recebidoSeries}
+          sparklineColor="#0ca30c"
+          trend={computeTrend(recebidoSeries, "up")}
         />
         <StatCard
           icon={Clock}
           tone="warning"
           label={`Pendente (${summary.quantidadePendente})`}
-          value={formatCurrency(summary.totalPendente)}
+          value={summary.totalPendente}
+          sparklineData={pendenteSeries}
+          sparklineColor="#9a6a00"
+          trend={computeTrend(pendenteSeries, "down")}
         />
         <StatCard
           icon={AlertCircle}
           tone="critical"
           label={`Atrasado (${summary.quantidadeAtrasado})`}
-          value={formatCurrency(summary.totalAtrasado)}
+          value={summary.totalAtrasado}
+          sparklineData={atrasadoSeries}
+          sparklineColor="#d03b3b"
+          trend={computeTrend(atrasadoSeries, "down")}
         />
       </div>
 
@@ -252,11 +312,17 @@ function StatCard({
   tone,
   label,
   value,
+  sparklineData,
+  sparklineColor,
+  trend,
 }: {
   icon: typeof CircleDollarSign;
   tone: "good" | "warning" | "critical";
   label: string;
-  value: string;
+  value: number;
+  sparklineData: number[];
+  sparklineColor: string;
+  trend: Trend | null;
 }) {
   const toneClasses = {
     good: "bg-status-good/10 text-status-good",
@@ -268,15 +334,38 @@ function StatCard({
     warning: "text-[#9a6a00]",
     critical: "text-status-critical",
   }[tone];
+  const trendClasses = trend
+    ? {
+        good: "text-status-good",
+        bad: "text-status-critical",
+        neutral: "text-ink-muted",
+      }[trend.tone]
+    : "";
+  const TrendIcon = trend?.icon === "up" ? TrendingUp : trend?.icon === "down" ? TrendingDown : Minus;
 
   return (
-    <div className="card p-5 flex items-start gap-4">
-      <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${toneClasses}`}>
-        <Icon size={20} />
-      </div>
-      <div className="min-w-0">
-        <p className="text-sm text-ink-muted">{label}</p>
-        <p className={`text-2xl font-bold mt-0.5 tabular-nums ${valueClasses}`}>{value}</p>
+    <div className="card p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-4 min-w-0">
+          <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${toneClasses}`}>
+            <Icon size={20} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm text-ink-muted">{label}</p>
+            <p className={`text-2xl font-bold mt-0.5 tabular-nums ${valueClasses}`}>
+              <AnimatedNumber value={value} formatter={formatCurrency} />
+            </p>
+            {trend && (
+              <div className={`inline-flex items-center gap-1 text-xs font-medium mt-1.5 ${trendClasses}`}>
+                <TrendIcon size={12} />
+                <span>{trend.label}</span>
+              </div>
+            )}
+          </div>
+        </div>
+        {sparklineData.length > 1 && (
+          <Sparkline data={sparklineData} color={sparklineColor} className="shrink-0 mt-1" />
+        )}
       </div>
     </div>
   );

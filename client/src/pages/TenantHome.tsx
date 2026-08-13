@@ -233,7 +233,7 @@ export default function TenantHome() {
             <p className="text-sm text-ink-secondary">{error}</p>
           </div>
         ) : (
-          <>
+          <div className="space-y-8 animate-[fadeIn_0.35s_ease-out]">
             <div className="relative overflow-hidden rounded-2xl bg-primary-700 text-white px-6 py-7 sm:px-8 sm:py-8">
               <div
                 aria-hidden
@@ -357,7 +357,7 @@ export default function TenantHome() {
                 </div>
               )}
             </div>
-          </>
+          </div>
         )}
       </div>
 

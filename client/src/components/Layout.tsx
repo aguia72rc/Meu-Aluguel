@@ -8,7 +8,7 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 const navItems = [
@@ -33,6 +33,7 @@ function initials(name: string) {
 export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const displayName = (user?.user_metadata?.name as string | undefined) || user?.email || "?";
 
   async function handleLogout() {
@@ -129,7 +130,9 @@ export default function Layout() {
         </nav>
 
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 sm:py-8 max-w-6xl w-full mx-auto">
-          <Outlet />
+          <div key={location.pathname} className="animate-[fadeIn_0.25s_ease-out]">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>
